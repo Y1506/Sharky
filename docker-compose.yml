@@ -1,0 +1,19 @@
+services:
+  download-manager:
+    build: .
+    container_name: download-manager
+    volumes:
+      - ./downloads:/downloads
+      # Mount your cookie file from host into the container.
+      # Extract cookies first using: python extract_cookies.py
+      - ./cookies.txt:/app/cookies.txt:ro
+    stdin_open: true
+    tty: true
+    # Host networking allows aria2c RPC to work seamlessly
+    network_mode: host
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python run.py server
