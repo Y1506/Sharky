@@ -133,8 +133,15 @@ class CLI:
 
     def _add_urls_menu(self):
         console.clear()
-        console.print("[bold cyan]Add URLs for Download[/bold cyan]\n")
-        url = console.input("[bold]Enter URL (file/video/torrent/magnet):[/bold] ").strip()
+        console.print("[bold cyan]Add Downloads[/bold cyan]\n")
+        console.print("[bold]1.[/bold] Add Single URL")
+        console.print("[bold]2.[/bold] Batch Import URLs from File")
+        mode = console.input("\n[bold]Choice (default: 1):[/bold] ").strip()
+        if mode == '2':
+            self._batch_import_menu()
+            return
+
+        url = console.input("\n[bold]Enter URL (file/video/torrent/magnet):[/bold] ").strip()
         if not url:
             return
         url_type = detect_url_type(url)
@@ -155,11 +162,48 @@ class CLI:
             include_subtitles = subs not in ['n', 'no']
             chapters = console.input("[bold]Embed chapters? (Y/n):[/bold] ").strip().lower()
             embed_chapters = chapters not in ['n', 'no']
-        item_id = self.manager.add_url(url, quality, include_subtitles, embed_chapters)
+
+        expected_hash = console.input("[bold]Expected checksum (optional, press Enter to skip):[/bold] ").strip() or None
+        hash_algorithm = "sha256"
+        if expected_hash:
+            algo_choice = console.input("[bold]Checksum algorithm [sha256/md5/sha1] (default: sha256):[/bold] ").strip().lower()
+            if algo_choice in ["sha256", "md5", "sha1"]:
+                hash_algorithm = algo_choice
+
+        item_id = self.manager.add_url(
+            url=url,
+            quality=quality,
+            include_subtitles=include_subtitles,
+            embed_chapters=embed_chapters,
+            expected_hash=expected_hash,
+            hash_algorithm=hash_algorithm,
+        )
         if item_id:
             console.print(f"\n[green]* Successfully added download (ID: {item_id})[/green]")
         else:
             console.print("\n[red]X Failed to add download[/red]")
+
+    def _batch_import_menu(self):
+        console.print("\n[bold cyan]Batch Import URLs from File[/bold cyan]\n")
+        file_path_str = console.input("[bold]Enter path to text file containing URLs (one per line):[/bold] ").strip()
+        if not file_path_str:
+            return
+        from pathlib import Path
+        path = Path(file_path_str).expanduser()
+        if not path.is_file():
+            console.print(f"[red]X File not found: {path}[/red]")
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                urls = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            if not urls:
+                console.print("[yellow]! File contains no URLs[/yellow]")
+                return
+            console.print(f"[dim]Found {len(urls)} URL(s) in file. Importing...[/dim]")
+            stats = self.manager.add_batch_urls(urls)
+            console.print(f"[green]* Import complete: {stats['added']} added, {stats['skipped']} skipped (duplicates), {stats['failed']} invalid.[/green]")
+        except Exception as e:
+            console.print(f"[red]X Error reading file: {e}[/red]")
 
     def _start_downloads(self):
         console.clear()
@@ -277,8 +321,9 @@ class CLI:
         console.print("[bold cyan]Settings[/bold cyan]\n")
         console.print("[bold]1.[/bold] Change Download Directory")
         console.print("[bold]2.[/bold] Change Concurrent Downloads")
-        console.print("[bold]3.[/bold] View Current Settings")
-        console.print("[bold]4.[/bold] Cookie Settings")
+        console.print("[bold]3.[/bold] Change Download Speed Limit")
+        console.print("[bold]4.[/bold] View Current Settings")
+        console.print("[bold]5.[/bold] Cookie Settings")
         choice = console.input("\n[bold]Choice:[/bold] ").strip()
 
         if choice == '1':
@@ -299,13 +344,25 @@ class CLI:
             except ValueError:
                 console.print("[red]X Invalid number[/red]")
         elif choice == '3':
+            console.print(f"[dim]Current limit: {config.DOWNLOAD_SPEED_LIMIT} B/s (0 = unlimited)[/dim]")
+            new_val = console.input("[bold]Enter speed limit in bytes/sec (e.g., 1048576 for 1MB/s, 0 for unlimited):[/bold] ").strip()
+            try:
+                val = int(new_val)
+                if val >= 0:
+                    config.DOWNLOAD_SPEED_LIMIT = val
+                    config.save_settings()
+                    console.print(f"\n[green]* Download speed limit set to {val} B/s[/green]")
+            except ValueError:
+                console.print("[red]X Invalid number[/red]")
+        elif choice == '4':
             console.print(f"Download Directory: {config.BASEDIR}")
             console.print(f"Concurrent Downloads: {config.CONCURRENTDOWNLOADS}")
+            console.print(f"Download Speed Limit: {config.DOWNLOAD_SPEED_LIMIT} B/s (0 = unlimited)")
             console.print(f"Cookie Manual Path: {config.COOKIE_MANUAL_PATH or 'Auto'}")
             console.print(f"Cookie Browser Path: {config.COOKIE_BROWSER_PATH or 'Auto'}")
             console.print(f"Cookie Max Age: {config.COOKIE_MAX_AGE}s ({config.COOKIE_MAX_AGE // 3600}h)")
             console.print(f"Cookie Browser Order: {', '.join(config.COOKIE_BROWSER_ORDER)}")
-        elif choice == '4':
+        elif choice == '5':
             self._cookie_settings_menu()
 
     def _cookie_settings_menu(self):

@@ -1,10 +1,13 @@
+import hashlib
 import unicodedata
 import shutil
 import subprocess
 import requests
+from pathlib import Path
 from urllib.parse import urlparse
 from functools import lru_cache
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
+
 
 def format_file_size(size_bytes: int) -> str:
     if size_bytes == 0:
@@ -104,3 +107,25 @@ def test_connection(url: str = "https://www.google.com", timeout: int = 5) -> bo
         return response.status_code < 400
     except Exception:
         return False
+
+def compute_file_hash(file_path: Union[str, Path], algorithm: str = "sha256") -> str:
+    """Compute cryptographic hash of a file in chunks."""
+    h = hashlib.new(algorithm.lower())
+    path = Path(file_path)
+    if not path.exists() or not path.is_file():
+        raise FileNotFoundError(f"File not found: {file_path}")
+    with open(path, "rb") as f:
+        while chunk := f.read(1048576):  # 1MB chunks
+            h.update(chunk)
+    return h.hexdigest().lower()
+
+def verify_file_hash(file_path: Union[str, Path], expected_hash: str, algorithm: str = "sha256") -> bool:
+    """Verify that file hash matches expected hash."""
+    if not expected_hash:
+        return True
+    try:
+        actual = compute_file_hash(file_path, algorithm)
+        return actual.strip().lower() == expected_hash.strip().lower()
+    except Exception:
+        return False
+

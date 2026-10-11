@@ -47,17 +47,19 @@ class Logger:
         self.logger.debug(message)
 
 class DatabaseManager:
-    def __init__(self, db_file: Optional[Path] = None):
-        self.db_file = db_file or config.DATABASEFILE
+    def __init__(self, db_file: Optional[Path] = None, db_path: Optional[Path] = None):
+        self.db_file = db_file or db_path or config.DATABASEFILE
         self.logger = Logger(config.LOGFILE)
         self._lock = threading.RLock()
         self._init_database()
 
     def _get_connection(self):
         conn = sqlite3.connect(self.db_file, timeout=30.0, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA cache_size=50000")
         conn.execute("PRAGMA temp_store=MEMORY")
         conn.execute("PRAGMA mmap_size=268435456")
@@ -90,13 +92,16 @@ class DatabaseManager:
                         seeds INTEGER DEFAULT 0,
                         peers INTEGER DEFAULT 0,
                         ratio REAL DEFAULT 0.0,
+                        expected_hash TEXT,
+                        actual_hash TEXT,
+                        hash_algorithm TEXT DEFAULT 'sha256',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         completed_at TIMESTAMP
                     )
                 ''')
                 try:
                     cursor = conn.execute("PRAGMA table_info(downloads)")
-                    columns = [row[1] for row in cursor.fetchall()]
+                    columns = [row['name'] for row in cursor.fetchall()]
                     if 'upload_bytes' not in columns:
                         conn.execute("ALTER TABLE downloads ADD COLUMN upload_bytes INTEGER DEFAULT 0")
                         self.logger.info("Added upload_bytes column to database")
@@ -112,6 +117,15 @@ class DatabaseManager:
                     if 'ratio' not in columns:
                         conn.execute("ALTER TABLE downloads ADD COLUMN ratio REAL DEFAULT 0.0")
                         self.logger.info("Added ratio column to database")
+                    if 'expected_hash' not in columns:
+                        conn.execute("ALTER TABLE downloads ADD COLUMN expected_hash TEXT")
+                        self.logger.info("Added expected_hash column to database")
+                    if 'actual_hash' not in columns:
+                        conn.execute("ALTER TABLE downloads ADD COLUMN actual_hash TEXT")
+                        self.logger.info("Added actual_hash column to database")
+                    if 'hash_algorithm' not in columns:
+                        conn.execute("ALTER TABLE downloads ADD COLUMN hash_algorithm TEXT DEFAULT 'sha256'")
+                        self.logger.info("Added hash_algorithm column to database")
                 except Exception as e:
                     self.logger.warning(f"Migration check failed: {e}")
                 indexes = [
@@ -136,19 +150,31 @@ class DatabaseManager:
             try:
                 cursor = conn.execute('''
                     INSERT OR IGNORE INTO downloads 
-                    (url, title, download_type, status, quality, include_subtitles, embed_chapters)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (item.url, item.title, item.download_type, item.status, item.quality, int(item.include_subtitles), int(item.embed_chapters)))
+                    (url, title, download_type, status, quality, include_subtitles, embed_chapters, expected_hash, hash_algorithm)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (item.url, item.title, item.download_type, item.status, item.quality,
+                      int(item.include_subtitles), int(item.embed_chapters), item.expected_hash, item.hash_algorithm))
                 conn.commit()
                 if cursor.rowcount > 0:
+                    item.id = cursor.lastrowid
                     return cursor.lastrowid
-                else:
-                    cursor = conn.execute('SELECT id FROM downloads WHERE url = ?', (item.url,))
-                    row = cursor.fetchone()
-                    return row[0] if row else None
+                return None
             except Exception as e:
                 self.logger.error(f"Failed to add download: {e}")
                 conn.rollback()
+                return None
+            finally:
+                conn.close()
+
+    def get_download_by_id(self, download_id: int) -> Optional[DownloadItem]:
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                cursor = conn.execute('SELECT * FROM downloads WHERE id = ?', (download_id,))
+                row = cursor.fetchone()
+                return self._row_to_item(row) if row else None
+            except Exception as e:
+                self.logger.error(f"Failed to get download by id: {e}")
                 return None
             finally:
                 conn.close()
@@ -165,11 +191,11 @@ class DatabaseManager:
                         downloaded_bytes = ?, upload_bytes = ?, progress = ?,
                         download_speed = ?, upload_speed = ?, eta = ?,
                         error_message = ?, attempts = ?, seeds = ?, peers = ?,
-                        ratio = ?, completed_at = ?
+                        ratio = ?, actual_hash = ?, completed_at = ?
                     WHERE id = ?
                 ''', (item.title, item.status, item.file_path, item.file_size, item.downloaded_bytes, item.upload_bytes, item.progress,
                       item.download_speed, item.upload_speed, item.eta, item.error_message, item.attempts, item.seeds, item.peers,
-                      item.ratio, item.completed_at, item.id))
+                      item.ratio, item.actual_hash, item.completed_at, item.id))
                 conn.commit()
                 return cursor.rowcount > 0
             except Exception as e:
@@ -180,44 +206,47 @@ class DatabaseManager:
                 conn.close()
 
     def get_downloads_by_status(self, status: str, limit: int = 100) -> List[DownloadItem]:
-        conn = self._get_connection()
-        try:
-            cursor = conn.execute('SELECT * FROM downloads WHERE status = ? ORDER BY created_at DESC LIMIT ?', (status, limit))
-            rows = cursor.fetchall()
-            return [item for item in [self._row_to_item(row) for row in rows] if item is not None]
-        except Exception as e:
-            self.logger.error(f"Failed to get downloads by status: {e}")
-            return []
-        finally:
-            conn.close()
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                cursor = conn.execute('SELECT * FROM downloads WHERE status = ? ORDER BY created_at DESC LIMIT ?', (status, limit))
+                rows = cursor.fetchall()
+                return [item for item in [self._row_to_item(row) for row in rows] if item is not None]
+            except Exception as e:
+                self.logger.error(f"Failed to get downloads by status: {e}")
+                return []
+            finally:
+                conn.close()
 
     def get_all_downloads(self, limit: int = 100) -> List[DownloadItem]:
-        conn = self._get_connection()
-        try:
-            cursor = conn.execute('SELECT * FROM downloads ORDER BY created_at DESC LIMIT ?', (limit,))
-            rows = cursor.fetchall()
-            return [item for item in [self._row_to_item(row) for row in rows] if item is not None]
-        except Exception as e:
-            self.logger.error(f"Failed to get all downloads: {e}")
-            return []
-        finally:
-            conn.close()
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                cursor = conn.execute('SELECT * FROM downloads ORDER BY created_at DESC LIMIT ?', (limit,))
+                rows = cursor.fetchall()
+                return [item for item in [self._row_to_item(row) for row in rows] if item is not None]
+            except Exception as e:
+                self.logger.error(f"Failed to get all downloads: {e}")
+                return []
+            finally:
+                conn.close()
 
     def get_download_stats(self) -> dict:
-        conn = self._get_connection()
-        try:
-            stats = {}
-            cursor = conn.execute('SELECT status, COUNT(*) FROM downloads GROUP BY status')
-            for status, count in cursor.fetchall():
-                stats[status] = count
-            cursor = conn.execute('SELECT COUNT(*) FROM downloads')
-            stats['total'] = cursor.fetchone()[0]
-            return stats
-        except Exception as e:
-            self.logger.error(f"Failed to get stats: {e}")
-            return {}
-        finally:
-            conn.close()
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                stats = {}
+                cursor = conn.execute('SELECT status, COUNT(*) FROM downloads GROUP BY status')
+                for row in cursor.fetchall():
+                    stats[row[0]] = row[1]
+                cursor = conn.execute('SELECT COUNT(*) FROM downloads')
+                stats['total'] = cursor.fetchone()[0]
+                return stats
+            except Exception as e:
+                self.logger.error(f"Failed to get stats: {e}")
+                return {}
+            finally:
+                conn.close()
 
     def remove_downloads(self, download_ids: List[int]) -> int:
         if not download_ids:
@@ -268,6 +297,36 @@ class DatabaseManager:
         if not row:
             return None
         try:
+            if isinstance(row, sqlite3.Row) or hasattr(row, 'keys'):
+                d = dict(row)
+                return DownloadItem(
+                    id=d.get('id'),
+                    url=d.get('url', ''),
+                    title=d.get('title', 'Unknown'),
+                    download_type=d.get('download_type', 'unknown'),
+                    status=d.get('status', 'pending'),
+                    file_path=d.get('file_path'),
+                    file_size=d.get('file_size'),
+                    downloaded_bytes=d.get('downloaded_bytes') or 0,
+                    upload_bytes=d.get('upload_bytes') or 0,
+                    progress=d.get('progress') or 0.0,
+                    download_speed=d.get('download_speed'),
+                    upload_speed=d.get('upload_speed'),
+                    eta=d.get('eta'),
+                    error_message=d.get('error_message'),
+                    attempts=d.get('attempts') or 0,
+                    quality=d.get('quality'),
+                    include_subtitles=bool(d.get('include_subtitles', 0)),
+                    embed_chapters=bool(d.get('embed_chapters', 0)),
+                    seeds=d.get('seeds') or 0,
+                    peers=d.get('peers') or 0,
+                    ratio=d.get('ratio') or 0.0,
+                    expected_hash=d.get('expected_hash'),
+                    actual_hash=d.get('actual_hash'),
+                    hash_algorithm=d.get('hash_algorithm') or 'sha256',
+                    created_at=d.get('created_at'),
+                    completed_at=d.get('completed_at')
+                )
             return DownloadItem(
                 id=row[0], url=row[1], title=row[2], download_type=row[3], status=row[4], file_path=row[5], file_size=row[6],
                 downloaded_bytes=row[7] or 0, upload_bytes=row[8] or 0, progress=row[9] or 0.0, download_speed=row[10], upload_speed=row[11],
@@ -279,3 +338,4 @@ class DatabaseManager:
         except Exception as e:
             self.logger.error(f"Failed to convert row to item: {e}")
             return None
+

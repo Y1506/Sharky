@@ -27,6 +27,9 @@ class DownloadItem:
     seeds: int = 0
     peers: int = 0
     ratio: float = 0.0
+    expected_hash: Optional[str] = None
+    actual_hash: Optional[str] = None
+    hash_algorithm: str = "sha256"
     _last_update: float = field(default_factory=time.time)
     _real_start_time: Optional[float] = None
     _real_start_bytes: int = 0

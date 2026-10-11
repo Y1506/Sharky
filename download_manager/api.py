@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import threading
 from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -20,6 +19,7 @@ async def lifespan(app: FastAPI):
     yield
     if manager:
         manager.stop_downloads()
+        manager.cleanup()
 
 app = FastAPI(title="Download Manager API", lifespan=lifespan)
 
@@ -28,23 +28,51 @@ class AddUrlRequest(BaseModel):
     quality: str = "best"
     include_subtitles: bool = False
     embed_chapters: bool = False
+    expected_hash: Optional[str] = None
+    hash_algorithm: Optional[str] = "sha256"
+
+class BatchAddUrlRequest(BaseModel):
+    urls: List[str]
+    quality: str = "best"
+    include_subtitles: bool = False
+    embed_chapters: bool = False
 
 @app.post("/api/downloads")
-def add_download(req: AddUrlRequest):
-    item_id = manager.add_url(
+async def add_download(req: AddUrlRequest):
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    item_id = await asyncio.to_thread(
+        manager.add_url,
         url=req.url,
         quality=req.quality,
         include_subtitles=req.include_subtitles,
-        embed_chapters=req.embed_chapters
+        embed_chapters=req.embed_chapters,
+        expected_hash=req.expected_hash,
+        hash_algorithm=req.hash_algorithm,
     )
     if not item_id:
         raise HTTPException(status_code=400, detail="Failed to add download (invalid or already exists)")
     return {"id": item_id, "message": "Download added"}
 
+@app.post("/api/downloads/batch")
+async def add_batch_downloads(req: BatchAddUrlRequest):
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    stats = await asyncio.to_thread(
+        manager.add_batch_urls,
+        urls=req.urls,
+        quality=req.quality,
+        include_subtitles=req.include_subtitles,
+        embed_chapters=req.embed_chapters,
+    )
+    return stats
+
 @app.get("/api/downloads")
-def list_downloads():
+async def list_downloads():
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
     try:
-        items = manager.db.get_all_downloads()
+        items = await asyncio.to_thread(manager.db.get_all_downloads)
         return [
             {
                 "id": i.id,
@@ -56,6 +84,9 @@ def list_downloads():
                 "eta": i.eta,
                 "error_message": i.error_message,
                 "quality": i.quality,
+                "expected_hash": i.expected_hash,
+                "actual_hash": i.actual_hash,
+                "hash_algorithm": i.hash_algorithm,
             }
             for i in items
         ]
@@ -63,50 +94,68 @@ def list_downloads():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/downloads/start")
-def start_downloads():
-    started = manager.start_downloads()
+async def start_downloads():
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    started = await asyncio.to_thread(manager.start_downloads)
     return {"started": started}
 
 @app.post("/api/downloads/pause")
-def pause_downloads():
-    manager.pause_downloads()
+async def pause_downloads():
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    await asyncio.to_thread(manager.pause_downloads)
     return {"message": "Downloads paused"}
 
 @app.post("/api/downloads/resume")
-def resume_downloads():
-    manager.resume_downloads()
+async def resume_downloads():
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    await asyncio.to_thread(manager.resume_downloads)
     return {"message": "Downloads resumed"}
 
 @app.post("/api/downloads/stop")
-def stop_downloads():
-    manager.stop_downloads()
+async def stop_downloads():
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    await asyncio.to_thread(manager.stop_downloads)
     return {"message": "Downloads stopped"}
 
 @app.post("/api/downloads/retry-failed")
-def retry_failed():
-    count = manager.retry_failed_downloads()
+async def retry_failed():
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    count = await asyncio.to_thread(manager.retry_failed_downloads)
     return {"message": f"Reset {count} failed downloads"}
 
 @app.delete("/api/downloads/completed")
-def clear_completed():
-    count = manager.clear_completed_downloads()
+async def clear_completed():
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    count = await asyncio.to_thread(manager.clear_completed_downloads)
     return {"message": f"Cleared {count} completed downloads"}
 
 @app.delete("/api/downloads/failed")
-def clear_failed():
-    count = manager.clear_failed_downloads()
+async def clear_failed():
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    count = await asyncio.to_thread(manager.clear_failed_downloads)
     return {"message": f"Cleared {count} failed downloads"}
 
 @app.delete("/api/downloads/{item_id}")
-def remove_download(item_id: int):
-    count = manager.remove_downloads([item_id])
+async def remove_download(item_id: int):
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    count = await asyncio.to_thread(manager.remove_downloads, [item_id])
     if count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
     return {"message": "Download removed"}
 
 @app.get("/api/stats")
-def get_stats():
-    items = manager.db.get_all_downloads()
+async def get_stats():
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    items = await asyncio.to_thread(manager.db.get_all_downloads)
     total = len(items)
     pending = sum(1 for i in items if i.status == "pending")
     downloading = sum(1 for i in items if i.status == "downloading")
@@ -121,7 +170,7 @@ def get_stats():
         "failed": failed,
         "paused": paused,
         "is_running": manager.running,
-        "is_paused": not manager.pause_event.is_set()
+        "is_paused": not manager.pause_event.is_set(),
     }
 
 @app.websocket("/ws/progress")
@@ -129,18 +178,21 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            items = manager.db.get_all_downloads()
-            data = [
-                {
-                    "id": i.id,
-                    "title": i.title,
-                    "status": i.status,
-                    "download_speed": i.download_speed,
-                    "eta": i.eta,
-                }
-                for i in items
-            ]
-            await websocket.send_json({"downloads": data, "stats": get_stats()})
+            if manager:
+                items = await asyncio.to_thread(manager.db.get_all_downloads)
+                stats = await get_stats()
+                data = [
+                    {
+                        "id": i.id,
+                        "title": i.title,
+                        "status": i.status,
+                        "download_speed": i.download_speed,
+                        "eta": i.eta,
+                        "progress": i.progress,
+                    }
+                    for i in items
+                ]
+                await websocket.send_json({"downloads": data, "stats": stats})
             await asyncio.sleep(1)
     except WebSocketDisconnect:
         pass

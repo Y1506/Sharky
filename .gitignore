@@ -9,10 +9,11 @@ dist/
 build/
 *.whl
 
-# Virtual environments
+# Virtual environments & testing
 venv/
 .venv/
 env/
+.pytest_cache/
 
 # IDE
 .vscode/

@@ -10,8 +10,9 @@ from rich.console import Console
 from ..config import config
 from ..models import DownloadItem
 from ..database import DatabaseManager
-from ..utils import sanitize_filename, format_speed, format_time, format_file_size
+from ..utils import sanitize_filename, format_speed, format_time, format_file_size, compute_file_hash, verify_file_hash
 from ..ui.display import progress_display
+from .base import BaseDownloader
 
 console = Console()
 
@@ -204,42 +205,68 @@ class Aria2cManager:
 
 aria2c_manager = Aria2cManager()
 
-class Aria2cDownloader:
+class Aria2cDownloader(BaseDownloader):
     def __init__(self, db_manager: DatabaseManager, shutdown_event: threading.Event, pause_event: threading.Event):
-        self.db = db_manager
-        self.shutdown_event = shutdown_event
-        self.pause_event = pause_event
-        self.server = aria2c_manager.server
-        self.is_available = aria2c_manager.is_running
+        super().__init__(db_manager, shutdown_event, pause_event)
+
+    @property
+    def is_available(self) -> bool:
+        return aria2c_manager.is_running and aria2c_manager.server is not None
+
+    def download(self, item: DownloadItem, **kwargs) -> bool:
+        return self.download_file(item)
 
     def download_file(self, item: DownloadItem) -> bool:
-        if not self.is_available or not aria2c_manager.server:
+        if not self.is_available:
             return False
         try:
-            while not self.pause_event.is_set():
-                if self.shutdown_event.is_set():
-                    return False
-                time.sleep(0.1)
-            
+            if not self.wait_if_paused():
+                return False
+
             if item.download_type == "video":
                 output_dir = config.VIDEODIR
             else:
                 output_dir = config.FILESDIR
             output_dir.mkdir(parents=True, exist_ok=True)
-            filename = self._extract_filename(item.url)
+
+            filename = self.extract_filename(item.url)
             if not filename or filename == "download.bin":
                 filename = f"{sanitize_filename(item.title)}.bin"
             file_path = output_dir / filename
             item.file_path = str(file_path)
+
+            speed_limit = str(config.DOWNLOAD_SPEED_LIMIT) if config.DOWNLOAD_SPEED_LIMIT > 0 else "0"
+
             options = {
-                'dir': str(output_dir), 'out': filename, 'max-connection-per-server': str(config.ARIA2C_MAX_CONNECTIONS),
-                'split': str(config.ARIA2C_SPLIT), 'min-split-size': config.ARIA2C_MIN_SPLIT_SIZE, 'max-concurrent-downloads': '1',
-                'piece-length': config.ARIA2C_PIECE_LENGTH, 'disk-cache': config.ARIA2C_DISK_CACHE, 'file-allocation': config.ARIA2C_FILE_ALLOCATION,
-                'continue': 'true', 'max-tries': '5', 'retry-wait': '2', 'timeout': '60', 'connect-timeout': '30', 'max-file-not-found': '5',
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'referer': '*', 'enable-http-keep-alive': 'true',
-                'enable-http-pipelining': 'true', 'enable-mmap': 'true', 'stream-piece-selector': 'geom', 'optimize-concurrent-downloads': 'true',
-                'max-download-limit': '0', 'lowest-speed-limit': '0', 'max-overall-download-limit': '0', 'conditional-get': 'true',
-                'remote-time': 'true', 'reuse-uri': 'true', 'max-resume-failure-tries': '5',
+                'dir': str(output_dir),
+                'out': filename,
+                'max-connection-per-server': str(config.ARIA2C_MAX_CONNECTIONS),
+                'split': str(config.ARIA2C_SPLIT),
+                'min-split-size': config.ARIA2C_MIN_SPLIT_SIZE,
+                'max-concurrent-downloads': '1',
+                'piece-length': config.ARIA2C_PIECE_LENGTH,
+                'disk-cache': config.ARIA2C_DISK_CACHE,
+                'file-allocation': config.ARIA2C_FILE_ALLOCATION,
+                'continue': 'true',
+                'max-tries': '5',
+                'retry-wait': '2',
+                'timeout': '60',
+                'connect-timeout': '30',
+                'max-file-not-found': '5',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'referer': '*',
+                'enable-http-keep-alive': 'true',
+                'enable-http-pipelining': 'true',
+                'enable-mmap': 'true',
+                'stream-piece-selector': 'geom',
+                'optimize-concurrent-downloads': 'true',
+                'max-download-limit': speed_limit,
+                'lowest-speed-limit': '0',
+                'max-overall-download-limit': '0',
+                'conditional-get': 'true',
+                'remote-time': 'true',
+                'reuse-uri': 'true',
+                'max-resume-failure-tries': '5',
             }
             gid = aria2c_manager.server.aria2.addUri(f"token:{config.ARIA2C_SECRET}", [item.url], options)
             item.status = "downloading"
@@ -260,17 +287,21 @@ class Aria2cDownloader:
             last_bytes = 0
             last_time = time.time()
             speed_samples = []
+
             while not self.shutdown_event.is_set():
-                while not self.pause_event.is_set():
-                    if self.shutdown_event.is_set():
-                        return False
-                    time.sleep(0.1)
-                
+                if not self.wait_if_paused():
+                    return False
+
                 current_time = time.time()
-                status = aria2c_manager.server.aria2.tellStatus(
-                    f"token:{config.ARIA2C_SECRET}", gid,
-                    ['totalLength', 'completedLength', 'downloadSpeed', 'connections', 'status', 'errorMessage']
-                )
+                try:
+                    status = aria2c_manager.server.aria2.tellStatus(
+                        f"token:{config.ARIA2C_SECRET}", gid,
+                        ['totalLength', 'completedLength', 'downloadSpeed', 'connections', 'status', 'errorMessage']
+                    )
+                except Exception as rpc_err:
+                    time.sleep(1)
+                    continue
+
                 if 'totalLength' in status and status['totalLength']:
                     item.file_size = int(status['totalLength'])
                     item.downloaded_bytes = int(status['completedLength'])
@@ -292,16 +323,49 @@ class Aria2cDownloader:
                                 item.eta = format_time(eta_seconds)
                             if item.id:
                                 progress_display.update_progress(
-                                    item.id, 
-                                    f"{item.title[:35]}...", 
-                                    item.downloaded_bytes, 
+                                    item.id,
+                                    f"{item.title[:35]}...",
+                                    item.downloaded_bytes,
                                     item.file_size,
-                                    avg_speed
+                                    avg_speed,
+                                    item.eta or "Unknown",
+                                    item.progress
                                 )
                         last_bytes = item.downloaded_bytes
                         last_time = current_time
+
                 self.db.update_download(item)
+
                 if status['status'] == 'complete':
+                    file_path = Path(item.file_path) if item.file_path else None
+                    if file_path and file_path.exists():
+                        item.file_size = file_path.stat().st_size
+                        item.downloaded_bytes = item.file_size
+                        item.progress = 100.0
+                        item.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
+
+                        # Checksum verification
+                        if item.expected_hash:
+                            try:
+                                algo = item.hash_algorithm or "sha256"
+                                actual = compute_file_hash(file_path, algo)
+                                item.actual_hash = actual
+                                if actual.strip().lower() != item.expected_hash.strip().lower():
+                                    item.status = "failed"
+                                    item.error_message = f"Checksum mismatch! Expected: {item.expected_hash}, Actual: {actual}"
+                                    self.db.update_download(item, force=True)
+                                    if item.id:
+                                        progress_display.remove_download(item.id)
+                                    console.print(f"[red]X {item.error_message}[/red]")
+                                    return False
+                            except Exception as hash_err:
+                                item.status = "failed"
+                                item.error_message = f"Failed to compute hash: {hash_err}"
+                                self.db.update_download(item, force=True)
+                                if item.id:
+                                    progress_display.remove_download(item.id)
+                                return False
+
                     item.status = "completed"
                     item.progress = 100.0
                     item.completed_at = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -310,6 +374,7 @@ class Aria2cDownloader:
                         progress_display.remove_download(item.id)
                     console.print(f"[green]* Download completed: {item.title}[/green]")
                     return True
+
                 if status['status'] == 'error':
                     item.status = "failed"
                     item.error_message = status.get('errorMessage', 'Unknown error')
@@ -317,8 +382,10 @@ class Aria2cDownloader:
                     if item.id:
                         progress_display.remove_download(item.id)
                     return False
+
                 time.sleep(0.5)
             return False
+
         except Exception as e:
             item.status = "failed"
             item.error_message = str(e)[:400]
@@ -327,16 +394,3 @@ class Aria2cDownloader:
                 progress_display.remove_download(item.id)
             return False
 
-    def _extract_filename(self, url: str) -> str:
-        try:
-            from urllib.parse import urlparse
-            parsed = urlparse(url)
-            if parsed.path:
-                filename = os.path.basename(parsed.path)
-                if '?' in filename:
-                    filename = filename.split('?')[0]
-                if filename and not filename.startswith('.'):
-                    return sanitize_filename(filename)
-        except Exception:
-            pass
-        return "download.bin"

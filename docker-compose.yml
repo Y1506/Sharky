@@ -16,4 +16,4 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
-    command: python run.py server
+    command: ["server"]

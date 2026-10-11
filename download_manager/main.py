@@ -12,8 +12,11 @@ def main():
         config.load_settings()
         
         mode = "cli"
-        if len(sys.argv) > 1:
-            mode = sys.argv[1].lower()
+        args = [a.lower() for a in sys.argv[1:]]
+        if "server" in args:
+            mode = "server"
+        elif "tui" in args:
+            mode = "tui"
             
         if mode == "server":
             from .api import run_server

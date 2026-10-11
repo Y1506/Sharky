@@ -1,6 +1,11 @@
 import threading
 import time
-import keyboard
+try:
+    import keyboard
+    HAS_KEYBOARD = True
+except (ImportError, Exception):
+    keyboard = None
+    HAS_KEYBOARD = False
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional, Dict
 from rich.console import Console
@@ -78,14 +83,31 @@ class DownloadManager:
             self.aria2c_downloader = Aria2cDownloader(self.db, self.shutdown_event, self.pause_event)
         return self.aria2c_downloader
 
-    def add_url(self, url: str, quality: str = "best", include_subtitles: bool = False, embed_chapters: bool = False) -> Optional[int]:
+    def add_url(
+        self,
+        url: str,
+        quality: str = "best",
+        include_subtitles: bool = False,
+        embed_chapters: bool = False,
+        expected_hash: Optional[str] = None,
+        hash_algorithm: Optional[str] = "sha256",
+    ) -> Optional[int]:
         if not validate_url(url):
             console.print(f"[red]X Invalid URL: {url}[/red]")
             return None
         try:
             download_type = detect_url_type(url)
-            item = DownloadItem(url=url, title="Pending...", status="pending", download_type=download_type, quality=quality,
-                              include_subtitles=include_subtitles, embed_chapters=embed_chapters)
+            item = DownloadItem(
+                url=url,
+                title="Pending...",
+                status="pending",
+                download_type=download_type,
+                quality=quality,
+                include_subtitles=include_subtitles,
+                embed_chapters=embed_chapters,
+                expected_hash=expected_hash.strip().lower() if expected_hash else None,
+                hash_algorithm=hash_algorithm.strip().lower() if hash_algorithm else "sha256",
+            )
             item_id = self.db.add_download(item)
             if item_id:
                 item.id = item_id
@@ -97,6 +119,37 @@ class DownloadManager:
         except Exception as e:
             console.print(f"[red]X Failed to add URL: {e}[/red]")
             return None
+
+    def add_batch_urls(
+        self,
+        urls: List[str],
+        quality: str = "best",
+        include_subtitles: bool = False,
+        embed_chapters: bool = False,
+    ) -> Dict[str, int]:
+        """
+        Add multiple URLs in a batch.
+        Returns a dict with 'added', 'skipped', and 'failed' counts.
+        """
+        stats = {"added": 0, "skipped": 0, "failed": 0}
+        for raw_url in urls:
+            url = raw_url.strip()
+            if not url or url.startswith("#"):
+                continue
+            if not validate_url(url):
+                stats["failed"] += 1
+                continue
+            item_id = self.add_url(
+                url=url,
+                quality=quality,
+                include_subtitles=include_subtitles,
+                embed_chapters=embed_chapters,
+            )
+            if item_id is not None:
+                stats["added"] += 1
+            else:
+                stats["skipped"] += 1
+        return stats
 
     def start_downloads(self) -> bool:
         if self.running:
@@ -281,11 +334,13 @@ class DownloadManager:
         self.save_state({'paused': False, 'active_downloads': list(self.active_downloads.keys()), 'timestamp': time.time()})
 
     def _setup_hotkeys(self):
+        if not HAS_KEYBOARD or keyboard is None:
+            return
         try:
             keyboard.add_hotkey(config.PAUSE_HOTKEY, self.pause_downloads)
             keyboard.add_hotkey(config.RESUME_HOTKEY, self.resume_downloads)
         except Exception as e:
-            console.print(f"[yellow]Warning: Could not setup hotkeys: {e}[/yellow]")
+            self.logger.debug(f"Could not setup hotkeys: {e}")
 
     def save_state(self, state_data: dict):
         config.save_state(state_data)
@@ -297,9 +352,10 @@ class DownloadManager:
             console.print("[yellow]Downloads were paused. Press Ctrl+Shift+R to resume.[/yellow]")
 
     def cleanup(self):
-        try:
-            keyboard.unhook_all()
-        except Exception:
-            pass
+        if HAS_KEYBOARD and keyboard is not None:
+            try:
+                keyboard.unhook_all()
+            except Exception:
+                pass
         network_monitor.stop()
         aria2c_manager.stop()

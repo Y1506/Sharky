@@ -12,9 +12,10 @@ import yt_dlp
 from ..config import config
 from ..models import DownloadItem
 from ..database import DatabaseManager
-from ..utils import sanitize_filename, format_speed, format_time, format_file_size, check_ffmpeg
+from ..utils import sanitize_filename, format_speed, format_time, format_file_size, check_ffmpeg, compute_file_hash, verify_file_hash
 from ..ui.display import progress_display
 from ..cookies import CookieManager
+from .base import BaseDownloader
 
 console = Console()
 
@@ -24,38 +25,28 @@ class Logger:
  def debug(self, msg): pass
  def info(self, msg): pass
 
-class VideoDownloader:
+class VideoDownloader(BaseDownloader):
     def __init__(self, db_manager: DatabaseManager, shutdown_event: threading.Event, pause_event: threading.Event):
-        self.db = db_manager
+        super().__init__(db_manager, shutdown_event, pause_event)
         self.logger = Logger(config.LOGFILE)
-        self.shutdown_event = shutdown_event
-        self.pause_event = pause_event
         self.has_ffmpeg, self.ffmpeg_cmd = check_ffmpeg()
         self.cookie_manager = CookieManager(config)
 
     def download(self, item: DownloadItem, quality: str = "best") -> bool:
         try:
-            if self.shutdown_event.is_set():
+            if not self.wait_if_paused():
                 return False
 
-            # Check pause before starting
-            while not self.pause_event.is_set():
-                if self.shutdown_event.is_set():
-                    return False
-                time.sleep(0.1)
-
-            # --- Cookie gate: no YT download starts without valid cookies ---
-            cookie_result = self.cookie_manager.get_valid_cookies()
-            if cookie_result is None:
-                console.print("[red]X Cannot download: No valid YouTube cookies available.[/red]")
-                console.print("[yellow]  Ensure Zen Browser or Brave is installed and has active YouTube cookies.[/yellow]")
-                console.print("[yellow]  Or set a manual cookie file path in Settings > Cookie Settings.[/yellow]")
-                item.status = "failed"
-                item.error_message = "No valid YouTube cookies available"
-                self.db.update_download(item, force=True)
-                return False
-
-            cookie_method, cookie_value = cookie_result
+            # Opportunistic cookie detection: use cookies if available, otherwise proceed
+            cookie_method, cookie_value = None, None
+            try:
+                cookie_result = self.cookie_manager.get_valid_cookies()
+                if cookie_result is not None:
+                    cookie_method, cookie_value = cookie_result
+                else:
+                    console.print("[dim]Note: No browser cookies found. Attempting download without cookies...[/dim]")
+            except Exception as ce:
+                console.print(f"[dim]Cookie check notice: {ce}. Continuing without cookies...[/dim]")
 
             self._extract_video_info(item)
             is_audio = self._is_audio_only(quality)
@@ -118,6 +109,19 @@ class VideoDownloader:
                     else:
                         downloaded_file = self._find_downloaded_file(output_dir, sanitized_title, is_audio)
                         if downloaded_file and downloaded_file.exists():
+                            if item.expected_hash:
+                                if not self.verify_checksum(downloaded_file, item.expected_hash, item.hash_algorithm or "sha256"):
+                                    actual = compute_file_hash(downloaded_file, item.hash_algorithm or "sha256")
+                                    item.actual_hash = actual
+                                    item.status = "failed"
+                                    item.error_message = f"Checksum mismatch: expected {item.expected_hash}, got {actual}"
+                                    self.db.update_download(item, force=True)
+                                    if item.id:
+                                        progress_display.remove_download(item.id)
+                                    console.print(f"[red]X {item.error_message}[/red]")
+                                    return False
+                                item.actual_hash = item.expected_hash
+
                             item.status = "completed"
                             item.progress = 100.0
                             item.file_path = str(downloaded_file)
@@ -237,6 +241,9 @@ class VideoDownloader:
             'keepvideo': False,
             'postprocessors': [],
         }
+
+        if config.DOWNLOAD_SPEED_LIMIT > 0:
+            ydl_opts['ratelimit'] = config.DOWNLOAD_SPEED_LIMIT
 
         # --- Playlist-specific options ---
         if is_playlist:
