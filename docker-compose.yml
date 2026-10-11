@@ -1,11 +1,10 @@
 services:
-  download-manager:
-    build: .
-    container_name: download-manager
+  sharky-backend:
+    build: ./Backend
+    container_name: sharky-backend
     volumes:
       - ./downloads:/downloads
-      # Mount your cookie file from host into the container.
-      # Extract cookies first using: python extract_cookies.py
+      # Mount your cookie file from host into the container if available:
       - ./cookies.txt:/app/cookies.txt:ro
     stdin_open: true
     tty: true

@@ -3,6 +3,7 @@ import contextlib
 from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
@@ -21,7 +22,15 @@ async def lifespan(app: FastAPI):
         manager.stop_downloads()
         manager.cleanup()
 
-app = FastAPI(title="Download Manager API", lifespan=lifespan)
+app = FastAPI(title="Sharky Download Engine API", version="3.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class AddUrlRequest(BaseModel):
     url: str

@@ -1,18 +1,17 @@
+#!/usr/bin/env python3
 """
-Root-level IDE Runner
-
-Allows running the download manager directly from an IDE "Run" button
-without using command line package switches (-m).
+Sharky - Root Launcher
+Forwards commands to the Backend service runner.
 """
-
-import sys
 import os
+import sys
+from pathlib import Path
 
-# Add the project directory to python's import path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Import the main entrypoint from the download_manager package
-from download_manager.main import main
+# Add Backend to Python path
+backend_dir = Path(__file__).resolve().parent / "Backend"
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 
 if __name__ == "__main__":
+    from download_manager.main import main
     main()
