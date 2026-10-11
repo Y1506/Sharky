@@ -32,6 +32,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/health")
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok", "app": "Sharky", "version": "3.0.0"}
+
+
 class AddUrlRequest(BaseModel):
     url: str
     quality: str = "best"

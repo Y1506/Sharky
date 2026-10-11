@@ -56,3 +56,15 @@ def test_api_stats(client):
     assert "total" in stats
     assert "pending" in stats
     assert "is_running" in stats
+
+
+def test_api_health(client):
+    resp = client.get("/api/health")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+    assert resp.json()["app"] == "Sharky"
+
+    resp2 = client.get("/health")
+    assert resp2.status_code == 200
+    assert resp2.json()["status"] == "ok"
+
