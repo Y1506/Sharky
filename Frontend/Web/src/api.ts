@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DownloadItem, DownloadStats, AddDownloadPayload, BatchAddDownloadPayload } from './types';
+import type { DownloadItem, DownloadStats, AddDownloadPayload, BatchAddDownloadPayload, AppSettings, CookieStatus } from './types';
 
 const API_BASE = '/api';
 
@@ -65,6 +65,36 @@ export async function clearCompletedDownloads(): Promise<void> {
 
 export async function removeDownload(id: number): Promise<void> {
   await fetch(`${API_BASE}/downloads/${id}`, { method: 'DELETE' });
+}
+
+export async function fetchSettings(): Promise<AppSettings> {
+  const res = await fetch(`${API_BASE}/settings`);
+  if (!res.ok) throw new Error('Failed to fetch settings');
+  return res.json();
+}
+
+export async function updateSettings(payload: Partial<AppSettings>): Promise<{ message: string; settings: AppSettings }> {
+  const res = await fetch(`${API_BASE}/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: 'Failed to update settings' }));
+    throw new Error(error.detail || 'Failed to update settings');
+  }
+  return res.json();
+}
+
+export async function fetchCookieStatus(): Promise<CookieStatus> {
+  const res = await fetch(`${API_BASE}/settings/cookies/status`);
+  if (!res.ok) throw new Error('Failed to fetch cookie status');
+  return res.json();
+}
+
+export async function clearCookies(): Promise<void> {
+  const res = await fetch(`${API_BASE}/settings/cookies/clear`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to clear cookies');
 }
 
 export function useSharkyWebSocket() {

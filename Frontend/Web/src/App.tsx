@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Download, Play, Pause, Square, RotateCcw, Trash2, Plus, Wifi, WifiOff,
-  Film, File, HardDrive, CheckCircle2, AlertCircle, Clock
+  Film, File, HardDrive, CheckCircle2, AlertCircle, Clock, Settings
 } from 'lucide-react';
 import {
   useSharkyWebSocket, startDownloads, pauseDownloads, resumeDownloads,
@@ -9,10 +9,12 @@ import {
   addDownload, addBatchDownloads
 } from './api';
 import type { AddDownloadPayload } from './types';
+import SettingsModal from './components/SettingsModal';
 
 export default function App() {
   const { downloads, stats, connected } = useSharkyWebSocket();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [batchInput, setBatchInput] = useState('');
@@ -110,6 +112,10 @@ export default function App() {
 
           <button onClick={() => stopDownloads()} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
             <Square style={{ width: '14px', height: '14px' }} /> Stop
+          </button>
+
+          <button onClick={() => setShowSettingsModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#1e293b', color: '#f1f5f9', border: '1px solid #334155', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }} title="Open System Settings">
+            <Settings style={{ width: '15px', height: '15px', color: '#38bdf8' }} /> Settings
           </button>
         </div>
       </header>
@@ -274,6 +280,12 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+      />
     </div>
   );
 }

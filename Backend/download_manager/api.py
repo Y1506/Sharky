@@ -9,6 +9,8 @@ import uvicorn
 
 from .manager import DownloadManager
 from .models import DownloadItem
+from .config import config
+from .cookies import CookieManager
 
 # Global instance
 manager: Optional[DownloadManager] = None
@@ -211,6 +213,94 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(1)
     except WebSocketDisconnect:
         pass
+
+class SettingsModel(BaseModel):
+    download_dir: Optional[str] = None
+    concurrent_downloads: Optional[int] = None
+    download_speed_limit: Optional[int] = None
+    aria2c_rpc_port: Optional[int] = None
+    aria2c_secret: Optional[str] = None
+    qbittorrent_host: Optional[str] = None
+    qbittorrent_username: Optional[str] = None
+    qbittorrent_password: Optional[str] = None
+    cookie_max_age: Optional[int] = None
+    cookie_manual_path: Optional[str] = None
+    cookie_browser_order: Optional[List[str]] = None
+
+def get_settings_dict():
+    return {
+        "download_dir": str(config.BASEDIR),
+        "concurrent_downloads": config.CONCURRENTDOWNLOADS,
+        "download_speed_limit": config.DOWNLOAD_SPEED_LIMIT,
+        "aria2c_rpc_port": config.ARIA2C_RPC_PORT,
+        "aria2c_secret": config.ARIA2C_SECRET,
+        "qbittorrent_host": config.QBITTORRENT_HOST,
+        "qbittorrent_username": config.QBITTORRENT_USERNAME,
+        "cookie_max_age": config.COOKIE_MAX_AGE,
+        "cookie_manual_path": config.COOKIE_MANUAL_PATH,
+        "cookie_browser_order": config.COOKIE_BROWSER_ORDER,
+    }
+
+@app.get("/api/settings")
+async def get_settings():
+    return get_settings_dict()
+
+@app.put("/api/settings")
+async def update_settings(req: SettingsModel):
+    if req.download_dir is not None and req.download_dir.strip():
+        success = config.set_download_directory(req.download_dir.strip())
+        if not success:
+            raise HTTPException(status_code=400, detail="Invalid download directory path")
+
+    if req.concurrent_downloads is not None:
+        if not (1 <= req.concurrent_downloads <= 64):
+            raise HTTPException(status_code=400, detail="concurrent_downloads must be between 1 and 64")
+        config.CONCURRENTDOWNLOADS = req.concurrent_downloads
+
+    if req.download_speed_limit is not None:
+        if req.download_speed_limit < 0:
+            raise HTTPException(status_code=400, detail="download_speed_limit must be >= 0")
+        config.DOWNLOAD_SPEED_LIMIT = req.download_speed_limit
+
+    if req.aria2c_rpc_port is not None:
+        if not (1024 <= req.aria2c_rpc_port <= 65535):
+            raise HTTPException(status_code=400, detail="aria2c_rpc_port must be between 1024 and 65535")
+        config.ARIA2C_RPC_PORT = req.aria2c_rpc_port
+
+    if req.aria2c_secret is not None:
+        config.ARIA2C_SECRET = req.aria2c_secret
+
+    if req.qbittorrent_host is not None:
+        config.QBITTORRENT_HOST = req.qbittorrent_host
+    if req.qbittorrent_username is not None:
+        config.QBITTORRENT_USERNAME = req.qbittorrent_username
+    if req.qbittorrent_password is not None:
+        config.QBITTORRENT_PASSWORD = req.qbittorrent_password
+
+    if req.cookie_max_age is not None:
+        if req.cookie_max_age <= 0:
+            raise HTTPException(status_code=400, detail="cookie_max_age must be > 0")
+        config.COOKIE_MAX_AGE = req.cookie_max_age
+
+    if req.cookie_manual_path is not None:
+        config.COOKIE_MANUAL_PATH = req.cookie_manual_path.strip() or None
+
+    if req.cookie_browser_order is not None:
+        config.COOKIE_BROWSER_ORDER = req.cookie_browser_order
+
+    config.save_settings()
+    return {"message": "Settings updated successfully", "settings": get_settings_dict()}
+
+@app.get("/api/settings/cookies/status")
+async def get_cookie_status():
+    cm = CookieManager(config)
+    return cm.get_cookie_status()
+
+@app.post("/api/settings/cookies/clear")
+async def clear_cached_cookies():
+    cm = CookieManager(config)
+    cm.clear_cached_cookies()
+    return {"message": "Cached cookies cleared"}
 
 def run_server(host="0.0.0.0", port=8000):
     uvicorn.run(app, host=host, port=port)

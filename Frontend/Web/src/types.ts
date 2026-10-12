@@ -40,3 +40,28 @@ export interface BatchAddDownloadPayload {
   include_subtitles?: boolean;
   embed_chapters?: boolean;
 }
+
+export interface AppSettings {
+  download_dir: string;
+  concurrent_downloads: number;
+  download_speed_limit: number;
+  aria2c_rpc_port: number;
+  aria2c_secret: string;
+  qbittorrent_host: string;
+  qbittorrent_username: string;
+  qbittorrent_password?: string;
+  cookie_max_age: number;
+  cookie_manual_path: string | null;
+  cookie_browser_order: string[];
+}
+
+export interface CookieStatus {
+  has_cached_cookies: boolean;
+  cached_cookie_age: string | null;
+  cached_cookie_fresh: boolean;
+  manual_path: string | null;
+  browser_order: string[];
+  zen_available: boolean;
+  brave_available: boolean;
+}
+

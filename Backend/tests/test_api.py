@@ -68,3 +68,47 @@ def test_api_health(client):
     assert resp2.status_code == 200
     assert resp2.json()["status"] == "ok"
 
+
+def test_api_settings_get_and_update(client, tmp_path):
+    get_resp = client.get("/api/settings")
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert "download_dir" in data
+    assert "concurrent_downloads" in data
+    assert "download_speed_limit" in data
+
+    # Update settings
+    new_dir = str(tmp_path / "custom_downloads")
+    update_resp = client.put(
+        "/api/settings",
+        json={
+            "download_dir": new_dir,
+            "concurrent_downloads": 8,
+            "download_speed_limit": 1048576,
+            "aria2c_rpc_port": 6801,
+        },
+    )
+    assert update_resp.status_code == 200
+    updated_data = update_resp.json()["settings"]
+    assert updated_data["concurrent_downloads"] == 8
+    assert updated_data["download_speed_limit"] == 1048576
+    assert updated_data["aria2c_rpc_port"] == 6801
+
+    # Validation errors
+    bad_resp = client.put("/api/settings", json={"concurrent_downloads": 0})
+    assert bad_resp.status_code == 400
+
+    bad_speed = client.put("/api/settings", json={"download_speed_limit": -1})
+    assert bad_speed.status_code == 400
+
+
+def test_api_cookies_status_and_clear(client):
+    status_resp = client.get("/api/settings/cookies/status")
+    assert status_resp.status_code == 200
+    status_data = status_resp.json()
+    assert "has_cached_cookies" in status_data
+
+    clear_resp = client.post("/api/settings/cookies/clear")
+    assert clear_resp.status_code == 200
+
+
