@@ -1,19 +1,33 @@
 services:
-  download-manager:
-    build: .
-    container_name: download-manager
-    volumes:
-      - ./downloads:/downloads
-      # Mount your cookie file from host into the container.
-      # Extract cookies first using: python extract_cookies.py
-      - ./cookies.txt:/app/cookies.txt:ro
-    stdin_open: true
-    tty: true
-    # Host networking allows aria2c RPC to work seamlessly
-    network_mode: host
+  sharky-backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: sharky-backend
     ports:
       - "8000:8000"
-    restart: unless-stopped
+    volumes:
+      - ./downloads:/downloads
     environment:
       - PYTHONUNBUFFERED=1
+      - DOWNLOAD_DIR=/downloads
+    restart: unless-stopped
     command: ["server"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  sharky-web:
+    build:
+      context: ./Frontend/Web
+      dockerfile: Dockerfile
+    container_name: sharky-web
+    ports:
+      - "3000:80"
+    depends_on:
+      sharky-backend:
+        condition: service_healthy
+    restart: unless-stopped

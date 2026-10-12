@@ -35,8 +35,8 @@ class CLI:
 
     def _show_banner(self):
         console.print("\n" + "=" * 70)
-        console.print("Advanced Download Manager v2.3 - Modular & Enhanced".center(70))
-        console.print("aria2c Auto-Launch | Real Speed Tracking".center(70))
+        console.print("Sharky Download Manager v3.0 - Fullstack Engine".center(70))
+        console.print("Multi-Protocol | aria2c Acceleration | Live Web/Mobile API".center(70))
         console.print("=" * 70 + "\n")
         console.print("[dim]Initializing system components...[/dim]")
         self._start_background_checks()
