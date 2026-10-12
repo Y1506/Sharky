@@ -76,7 +76,7 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0b0f19', color: '#f1f5f9', fontFamily: 'system-ui, sans-serif' }}>
       {/* Top Navbar */}
-      <header style={{ borderBottom: '1px solid #1e293b', backgroundColor: '#0f172a', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header style={{ borderBottom: '1px solid #1e293b', backgroundColor: '#0f172a', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'linear-gradient(135deg, #0284c7, #38bdf8)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Download style={{ width: '20px', height: '20px', color: '#ffffff' }} />
@@ -88,14 +88,18 @@ export default function App() {
         </div>
 
         {/* Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '16px', fontSize: '12px', color: connected ? '#34d399' : '#f87171' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '8px', fontSize: '12px', color: connected ? '#34d399' : '#f87171' }}>
             {connected ? <Wifi style={{ width: '14px', height: '14px' }} /> : <WifiOff style={{ width: '14px', height: '14px' }} />}
             <span>{connected ? 'Live Sync' : 'Reconnecting...'}</span>
           </div>
 
           <button onClick={() => setShowAddModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
             <Plus style={{ width: '16px', height: '16px' }} /> Add Download
+          </button>
+
+          <button onClick={() => setShowSettingsModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#1e293b', color: '#38bdf8', border: '1px solid #0284c7', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }} title="Open System Settings">
+            <Settings style={{ width: '15px', height: '15px' }} /> Settings
           </button>
 
           <button onClick={() => startDownloads()} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
@@ -112,10 +116,6 @@ export default function App() {
 
           <button onClick={() => stopDownloads()} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
             <Square style={{ width: '14px', height: '14px' }} /> Stop
-          </button>
-
-          <button onClick={() => setShowSettingsModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#1e293b', color: '#f1f5f9', border: '1px solid #334155', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }} title="Open System Settings">
-            <Settings style={{ width: '15px', height: '15px', color: '#38bdf8' }} /> Settings
           </button>
         </div>
       </header>
@@ -158,9 +158,12 @@ export default function App() {
         </div>
 
         {/* Section Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Active & Queued Downloads</h2>
           <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={() => setShowSettingsModal(true)} style={{ padding: '6px 12px', fontSize: '12px', backgroundColor: '#1e293b', color: '#38bdf8', border: '1px solid #0284c7', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 500 }} title="Open System Settings">
+              <Settings style={{ width: '13px', height: '13px' }} /> Settings
+            </button>
             <button onClick={() => retryFailedDownloads()} style={{ padding: '6px 12px', fontSize: '12px', backgroundColor: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: '6px', cursor: 'pointer' }}>
               Retry Failed
             </button>
