@@ -336,6 +336,11 @@ class DownloadManager:
     def _setup_hotkeys(self):
         if not HAS_KEYBOARD or keyboard is None:
             return
+        # Skip hotkeys in Docker or non-interactive/headless environments
+        import os
+        import sys
+        if os.environ.get('DOWNLOAD_DIR') or not sys.stdin.isatty():
+            return
         try:
             keyboard.add_hotkey(config.PAUSE_HOTKEY, self.pause_downloads)
             keyboard.add_hotkey(config.RESUME_HOTKEY, self.resume_downloads)

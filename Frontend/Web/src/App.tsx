@@ -201,6 +201,16 @@ export default function App() {
                     <td style={{ padding: '14px 16px', fontWeight: 500, maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       <div title={item.title}>{item.title}</div>
                       <div style={{ fontSize: '12px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.url}</div>
+                      {item.error_message && (
+                        <div style={{ fontSize: '11px', color: '#f87171', marginTop: '2px' }} title={item.error_message}>
+                          {item.error_message}
+                        </div>
+                      )}
+                      {item.status === 'completed' && (
+                        <div style={{ fontSize: '11px', color: '#34d399', marginTop: '2px' }}>
+                          ✓ Saved to downloads folder
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '14px 16px' }}>{getStatusBadge(item.status)}</td>
                     <td style={{ padding: '14px 16px' }}>
@@ -214,9 +224,30 @@ export default function App() {
                     <td style={{ padding: '14px 16px', fontSize: '13px', color: '#38bdf8' }}>{item.download_speed || '-'}</td>
                     <td style={{ padding: '14px 16px', fontSize: '13px', color: '#94a3b8' }}>{item.eta || '-'}</td>
                     <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                      <button onClick={() => removeDownload(item.id)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px' }}>
-                        <Trash2 style={{ width: '16px', height: '16px' }} />
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                        {item.status === 'completed' && (
+                          <a
+                            href={`/api/downloads/${item.id}/file`}
+                            download
+                            style={{
+                              color: '#38bdf8',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: '4px',
+                              borderRadius: '4px',
+                              textDecoration: 'none',
+                              cursor: 'pointer',
+                            }}
+                            title="Download / Open file"
+                          >
+                            <Download style={{ width: '16px', height: '16px' }} />
+                          </a>
+                        )}
+                        <button onClick={() => removeDownload(item.id)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px' }} title="Delete download">
+                          <Trash2 style={{ width: '16px', height: '16px' }} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

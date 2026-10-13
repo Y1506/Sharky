@@ -2,7 +2,9 @@ import asyncio
 import contextlib
 from typing import List, Dict, Any, Optional
 
+from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -168,6 +170,33 @@ async def remove_download(item_id: int):
         raise HTTPException(status_code=404, detail="Item not found")
     return {"message": "Download removed"}
 
+@app.get("/api/downloads/{item_id}/file")
+async def download_file(item_id: int):
+    if not manager:
+        raise HTTPException(status_code=503, detail="Manager not initialized")
+    item = await asyncio.to_thread(manager.db.get_download_by_id, item_id)
+    if not item or not item.file_path:
+        raise HTTPException(status_code=404, detail="File path not recorded for this item")
+
+    file_path = Path(item.file_path)
+    if not file_path.exists():
+        # Fallback check inside configured subdirectories
+        filename = file_path.name
+        for sub in [config.VIDEODIR, config.AUDIODIR, config.FILESDIR, config.TORRENTSDIR]:
+            candidate = sub / filename
+            if candidate.exists():
+                file_path = candidate
+                break
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"File not found on disk: {file_path.name}")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=file_path.name,
+        media_type="application/octet-stream"
+    )
+
 @app.get("/api/stats")
 async def get_stats():
     if not manager:
@@ -201,16 +230,22 @@ async def websocket_endpoint(websocket: WebSocket):
                 data = [
                     {
                         "id": i.id,
+                        "url": i.url,
                         "title": i.title,
                         "status": i.status,
+                        "download_type": i.download_type,
                         "download_speed": i.download_speed,
                         "eta": i.eta,
                         "progress": i.progress,
+                        "file_size": i.file_size,
+                        "downloaded_bytes": i.downloaded_bytes,
+                        "error_message": i.error_message,
+                        "file_path": i.file_path,
                     }
                     for i in items
                 ]
                 await websocket.send_json({"downloads": data, "stats": stats})
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
     except WebSocketDisconnect:
         pass
 

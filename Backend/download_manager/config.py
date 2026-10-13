@@ -108,8 +108,11 @@ class Config:
                     key_upper = key.upper()
                     if hasattr(self, key_upper):
                         if key == 'basedir':
-                            self.BASEDIR = Path(value).resolve()
-                            self.__post_init__()
+                            # When DOWNLOAD_DIR environment variable is set (e.g. in Docker),
+                            # keep the container's mounted directory and do not overwrite it with host path.
+                            if not os.environ.get('DOWNLOAD_DIR'):
+                                self.BASEDIR = Path(value).resolve()
+                                self.__post_init__()
                         else:
                             setattr(self, key_upper, value)
         except Exception as e:
@@ -117,8 +120,18 @@ class Config:
 
     def save_settings(self):
         try:
+            saved_basedir = str(self.BASEDIR)
+            if os.environ.get('DOWNLOAD_DIR') and self.SETTINGSFILE.exists():
+                try:
+                    with open(self.SETTINGSFILE, 'r', encoding='utf-8') as f:
+                        old_s = json.load(f)
+                        if 'basedir' in old_s:
+                            saved_basedir = old_s['basedir']
+                except Exception:
+                    pass
+
             settings = {
-                'basedir': str(self.BASEDIR),
+                'basedir': saved_basedir,
                 'concurrentdownloads': self.CONCURRENTDOWNLOADS,
                 'download_speed_limit': self.DOWNLOAD_SPEED_LIMIT,
                 'aria2c_rpc_port': self.ARIA2C_RPC_PORT,

@@ -356,14 +356,18 @@ class VideoDownloader(BaseDownloader):
                 item._real_start_bytes = 0
                 item._last_speed_update = current_time
                 item._speed_window = []
-            if 'downloaded_bytes' in d and 'total_bytes' in d:
+            if 'downloaded_bytes' in d and 'total_bytes' in d and d['total_bytes'] > 0:
                 item.downloaded_bytes = d['downloaded_bytes']
                 item.file_size = d['total_bytes']
                 item.progress = (item.downloaded_bytes / item.file_size) * 100
-            elif 'downloaded_bytes' in d and 'total_bytes_estimate' in d:
+            elif 'downloaded_bytes' in d and 'total_bytes_estimate' in d and d['total_bytes_estimate'] > 0:
                 item.downloaded_bytes = d['downloaded_bytes']
                 item.file_size = d['total_bytes_estimate']
                 item.progress = (item.downloaded_bytes / item.file_size) * 100
+            elif 'fragment_index' in d and 'fragment_count' in d and d.get('fragment_count'):
+                item.progress = (d['fragment_index'] / d['fragment_count']) * 100
+                if 'downloaded_bytes' in d:
+                    item.downloaded_bytes = d['downloaded_bytes']
             time_since_update = current_time - item._last_speed_update
             if time_since_update >= 0.5:
                 total_elapsed = current_time - item._real_start_time
@@ -392,8 +396,8 @@ class VideoDownloader(BaseDownloader):
                         )
                     item._last_speed_update = current_time
                     item._real_start_bytes = item.downloaded_bytes
-            if item.should_update_db(threshold=1.0):
-                self.db.update_download(item)
+            if item.should_update_db(threshold=0.5):
+                self.db.update_download(item, force=True)
 
     def _find_downloaded_file(self, output_dir: Path, title: str, is_audio: bool) -> Optional[Path]:
         extensions = ['.m4a', '.mp3'] if is_audio else ['.mp4', '.mkv', '.webm']
