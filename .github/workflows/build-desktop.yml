@@ -333,7 +333,7 @@ jobs:
           retention-days: 7
 
       - name: Attach .pkg.tar.zst & PKGBUILD to Release
-        if: startsWith(github.ref, 'refs/tags/') && github.event.inputs.dry_run != 'true'
+        if: always()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -342,4 +342,5 @@ jobs:
             packaging/PKGBUILD
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
