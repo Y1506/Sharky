@@ -1,0 +1,114 @@
+# =============================================================================
+# Sharky CI Pipeline (Lint, Typecheck & Test)
+# =============================================================================
+# Runs automatically on pull requests and branch pushes to safeguard code quality.
+# Validates:
+#   1. Python Backend: Unit tests, dependency checks, and API health
+#   2. React Web Frontend: TypeScript type checking and Vite build
+#   3. Rust TUI: Cargo check and compiler lints
+# =============================================================================
+
+name: "CI"
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "Refact/**"
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Python Backend Test Suite
+  # ---------------------------------------------------------------------------
+  test-backend:
+    name: "Backend Tests (Python 3.12)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: Backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r Backend/requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Install runtime utilities (aria2 & ffmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aria2 ffmpeg
+
+      - name: Run Backend Pytest Suite
+        working-directory: Backend
+        run: |
+          pytest tests/ -v --tb=short
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Frontend Web TypeScript Check & Build
+  # ---------------------------------------------------------------------------
+  check-frontend:
+    name: "Web Frontend Check (React 19 + TypeScript)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: Frontend/Web/package.json
+
+      - name: Install dependencies
+        working-directory: Frontend/Web
+        run: npm ci
+
+      - name: TypeScript Compilation Check & Vite Build
+        working-directory: Frontend/Web
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Rust TUI Compiler & Clippy Check
+  # ---------------------------------------------------------------------------
+  check-tui:
+    name: "TUI Rust Verification"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "TUI -> target"
+
+      - name: Cargo Check TUI
+        working-directory: TUI
+        run: cargo check --verbose
+
+      - name: Cargo Clippy
+        working-directory: TUI
+        run: cargo clippy -- -D warnings
