@@ -95,12 +95,13 @@ jobs:
           path: ./${{ matrix.artifact_name }}
           retention-days: 7
 
-      # Publish directly to GitHub Release when triggered by version tag
+      # Publish directly to GitHub Release
       - name: Attach TUI Binary to Release
-        if: startsWith(github.ref, 'refs/tags/') && github.event.inputs.dry_run != 'true'
+        if: github.event.inputs.dry_run != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: ./${{ matrix.artifact_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
