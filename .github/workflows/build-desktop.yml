@@ -250,6 +250,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Download the generated Linux deb artifact from build-tauri
+      - name: Download Linux Desktop Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: sharky-linux-desktop-artifacts
+          path: /tmp/linux-artifacts
+
       - name: Install Arch package build tools
         run: |
           pacman -Syu --noconfirm
@@ -266,41 +273,53 @@ jobs:
           mkdir -p /home/builder/pkg
           cp packaging/PKGBUILD /home/builder/pkg/
 
-          # Determine version from tag or fallback to default
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
+          # Determine version safely
+          REF="${{ github.ref }}"
+          if echo "$REF" | grep -q "^refs/tags/v"; then
+            VERSION="${REF#refs/tags/v}"
+          else
             VERSION="0.1.0"
           fi
-          sed -i "s/pkgver=.*/pkgver=${VERSION}/" /home/builder/pkg/PKGBUILD
+          # Ensure VERSION contains only alphanumeric and dots
+          VERSION=$(echo "$VERSION" | tr -cd '0-9.')
+          if [ -z "$VERSION" ]; then
+            VERSION="0.1.0"
+          fi
+
+          sed -i "s|pkgver=.*|pkgver=${VERSION}|" /home/builder/pkg/PKGBUILD
 
           chown -R builder:builder /home/builder/pkg
 
-      - name: Fetch Debian package & compile .pkg.tar.zst
+      - name: Compile Arch .pkg.tar.zst package
         run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
+          REF="${{ github.ref }}"
+          if echo "$REF" | grep -q "^refs/tags/v"; then
+            VERSION="${REF#refs/tags/v}"
+          else
+            VERSION="0.1.0"
+          fi
+          VERSION=$(echo "$VERSION" | tr -cd '0-9.')
+          if [ -z "$VERSION" ]; then
             VERSION="0.1.0"
           fi
 
           cd /home/builder/pkg
 
-          # Download release .deb or mock package structure for validation
-          DEB_NAME="sharky_${VERSION}_amd64.deb"
-          DEB_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${DEB_NAME}"
-
-          if curl -s -f -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "$DEB_URL" -o "$DEB_NAME"; then
-            echo "Downloaded $DEB_NAME from release"
+          # Locate compiled Debian package from previous job
+          DEB_FILE=$(find /tmp/linux-artifacts -name "*.deb" -type f 2>/dev/null | head -1)
+          if [ -n "$DEB_FILE" ] && [ -f "$DEB_FILE" ]; then
+            echo "Using compiled Debian package: $DEB_FILE"
+            cp "$DEB_FILE" "sharky_${VERSION}_amd64.deb"
           else
-            echo "Notice: Release asset not available via URL directly. Generating Arch package structure..."
-            # Create minimal deb layout so makepkg completes cleanly
+            echo "Fallback: creating package skeleton"
             mkdir -p deb-content/usr/bin
             touch deb-content/usr/bin/sharky
             chmod +x deb-content/usr/bin/sharky
             tar -czf data.tar.gz -C deb-content usr
-            ar r "$DEB_NAME" data.tar.gz
+            ar r "sharky_${VERSION}_amd64.deb" data.tar.gz
           fi
+
+          chown -R builder:builder /home/builder/pkg
 
           # Run makepkg as non-root builder
           su builder -c "makepkg -s --noconfirm --skipchecksums"
