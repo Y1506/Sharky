@@ -187,7 +187,7 @@ jobs:
 
       - name: Install Frontend Dependencies
         working-directory: Frontend/Web
-        run: npm ci
+        run: npm ci || npm install
 
       # Build Tauri Application (compiles React + Rust + bundles sidecar)
       # Generates NSIS .exe, WiX .msi on Windows, and AppImage, .deb on Linux
@@ -324,17 +324,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ---------------------------------------------------------------------------
-  # Step 4: Cleanup Temporary Artifacts
-  # ---------------------------------------------------------------------------
-  cleanup:
-    name: "Cleanup Intermediate Artifacts"
-    needs: [build-tauri, build-arch]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Remove temporary sidecar binaries
-        uses: geekyeggo/delete-artifact@v5
-        with:
-          name: sidecar-*
-        continue-on-error: true

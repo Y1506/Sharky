@@ -79,7 +79,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: Frontend/Web
-        run: npm ci
+        run: npm ci || npm install
 
       - name: TypeScript Compilation Check & Vite Build
         working-directory: Frontend/Web

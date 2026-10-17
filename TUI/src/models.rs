@@ -26,6 +26,7 @@ pub struct DownloadStats {
     pub is_paused: bool,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppSettings {
     pub download_dir: Option<String>,

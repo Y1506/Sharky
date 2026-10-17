@@ -31,12 +31,14 @@ impl ApiClient {
         Ok(stats)
     }
 
+    #[allow(dead_code)]
     pub async fn fetch_settings(&self) -> Result<AppSettings> {
         let url = format!("{}/api/settings", self.base_url);
         let settings = self.client.get(&url).send().await?.json().await?;
         Ok(settings)
     }
 
+    #[allow(dead_code)]
     pub async fn update_settings(&self, settings: &AppSettings) -> Result<()> {
         let url = format!("{}/api/settings", self.base_url);
         self.client.put(&url).json(settings).send().await?;

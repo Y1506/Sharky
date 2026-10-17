@@ -42,7 +42,6 @@ docker-compose.override.yml
 # Frontend & Node
 node_modules/
 *.tsbuildinfo
-package-lock.json
 
 # Tauri
 Frontend/Web/src-tauri/target/

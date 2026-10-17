@@ -5,6 +5,7 @@ pub struct App {
     pub stats: DownloadStats,
     pub selected_index: usize,
     pub is_connected: bool,
+    #[allow(dead_code)]
     pub server_url: String,
     pub status_message: String,
 }
