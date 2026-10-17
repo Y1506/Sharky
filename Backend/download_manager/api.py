@@ -13,6 +13,7 @@ from .manager import DownloadManager
 from .models import DownloadItem
 from .config import config
 from .cookies import CookieManager
+from .downloaders.aria2 import aria2c_manager
 
 # Global instance
 manager: Optional[DownloadManager] = None
@@ -253,6 +254,29 @@ class SettingsModel(BaseModel):
     download_dir: Optional[str] = None
     concurrent_downloads: Optional[int] = None
     download_speed_limit: Optional[int] = None
+    upload_speed_limit: Optional[int] = None
+    max_connections_per_server: Optional[int] = None
+    continue_download: Optional[bool] = None
+    auto_resume_unfinished: Optional[bool] = None
+    bt_save_magnet_as_torrent: Optional[bool] = None
+    bt_auto_download_content: Optional[bool] = None
+    bt_force_encryption: Optional[bool] = None
+    bt_keep_seeding: Optional[bool] = None
+    bt_seed_ratio: Optional[float] = None
+    bt_seed_time: Optional[int] = None
+    bt_listen_port: Optional[int] = None
+    dht_listen_port: Optional[int] = None
+    enable_upnp: Optional[bool] = None
+    proxy_enabled: Optional[bool] = None
+    proxy_url: Optional[str] = None
+    bt_trackers: Optional[str] = None
+    bt_tracker_sources: Optional[List[str]] = None
+    bt_auto_update_trackers: Optional[bool] = None
+    user_agent: Optional[str] = None
+    aria2_conf_path: Optional[str] = None
+    session_path: Optional[str] = None
+    log_path: Optional[str] = None
+    log_level: Optional[str] = None
     aria2c_rpc_port: Optional[int] = None
     aria2c_secret: Optional[str] = None
     qbittorrent_host: Optional[str] = None
@@ -267,6 +291,30 @@ def get_settings_dict():
         "download_dir": str(config.BASEDIR),
         "concurrent_downloads": config.CONCURRENTDOWNLOADS,
         "download_speed_limit": config.DOWNLOAD_SPEED_LIMIT,
+        "upload_speed_limit": config.UPLOAD_SPEED_LIMIT,
+        "max_connections_per_server": config.ARIA2C_MAX_CONNECTIONS,
+        "continue_download": config.ARIA2C_CONTINUE,
+        "auto_resume_unfinished": config.AUTO_RESUME_UNFINISHED,
+        "bt_save_magnet_as_torrent": config.BT_SAVE_MAGNET_AS_TORRENT,
+        "bt_auto_download_content": config.BT_AUTO_DOWNLOAD_CONTENT,
+        "bt_force_encryption": config.BT_FORCE_ENCRYPTION,
+        "bt_keep_seeding": config.BT_KEEP_SEEDING,
+        "bt_seed_ratio": config.BT_SEED_RATIO,
+        "bt_seed_time": config.BT_SEED_TIME,
+        "bt_listen_port": config.BT_LISTEN_PORT,
+        "dht_listen_port": config.DHT_LISTEN_PORT,
+        "enable_upnp": config.ENABLE_UPNP,
+        "proxy_enabled": config.PROXY_ENABLED,
+        "proxy_url": config.PROXY_URL,
+        "bt_trackers": config.BT_TRACKERS,
+        "bt_tracker_sources": config.BT_TRACKER_SOURCES,
+        "bt_auto_update_trackers": config.BT_AUTO_UPDATE_TRACKERS,
+        "bt_trackers_last_updated": config.BT_TRACKERS_LAST_UPDATED,
+        "user_agent": config.USER_AGENT,
+        "aria2_conf_path": config.ARIA2_CONF_PATH or "",
+        "session_path": config.SESSION_PATH or "",
+        "log_path": config.LOG_PATH or "",
+        "log_level": config.LOG_LEVEL,
         "aria2c_rpc_port": config.ARIA2C_RPC_PORT,
         "aria2c_secret": config.ARIA2C_SECRET,
         "qbittorrent_host": config.QBITTORRENT_HOST,
@@ -297,6 +345,89 @@ async def update_settings(req: SettingsModel):
             raise HTTPException(status_code=400, detail="download_speed_limit must be >= 0")
         config.DOWNLOAD_SPEED_LIMIT = req.download_speed_limit
 
+    if req.upload_speed_limit is not None:
+        if req.upload_speed_limit < 0:
+            raise HTTPException(status_code=400, detail="upload_speed_limit must be >= 0")
+        config.UPLOAD_SPEED_LIMIT = req.upload_speed_limit
+
+    if req.max_connections_per_server is not None:
+        if not (1 <= req.max_connections_per_server <= 64):
+            raise HTTPException(status_code=400, detail="max_connections_per_server must be between 1 and 64")
+        config.ARIA2C_MAX_CONNECTIONS = req.max_connections_per_server
+
+    if req.continue_download is not None:
+        config.ARIA2C_CONTINUE = bool(req.continue_download)
+
+    if req.auto_resume_unfinished is not None:
+        config.AUTO_RESUME_UNFINISHED = bool(req.auto_resume_unfinished)
+
+    if req.bt_save_magnet_as_torrent is not None:
+        config.BT_SAVE_MAGNET_AS_TORRENT = bool(req.bt_save_magnet_as_torrent)
+
+    if req.bt_auto_download_content is not None:
+        config.BT_AUTO_DOWNLOAD_CONTENT = bool(req.bt_auto_download_content)
+
+    if req.bt_force_encryption is not None:
+        config.BT_FORCE_ENCRYPTION = bool(req.bt_force_encryption)
+
+    if req.bt_keep_seeding is not None:
+        config.BT_KEEP_SEEDING = bool(req.bt_keep_seeding)
+
+    if req.bt_seed_ratio is not None:
+        if req.bt_seed_ratio < 0:
+            raise HTTPException(status_code=400, detail="bt_seed_ratio must be >= 0")
+        config.BT_SEED_RATIO = float(req.bt_seed_ratio)
+
+    if req.bt_seed_time is not None:
+        if req.bt_seed_time < 0:
+            raise HTTPException(status_code=400, detail="bt_seed_time must be >= 0")
+        config.BT_SEED_TIME = int(req.bt_seed_time)
+
+    if req.bt_listen_port is not None:
+        if not (1024 <= req.bt_listen_port <= 65535):
+            raise HTTPException(status_code=400, detail="bt_listen_port must be between 1024 and 65535")
+        config.BT_LISTEN_PORT = req.bt_listen_port
+
+    if req.dht_listen_port is not None:
+        if not (1024 <= req.dht_listen_port <= 65535):
+            raise HTTPException(status_code=400, detail="dht_listen_port must be between 1024 and 65535")
+        config.DHT_LISTEN_PORT = req.dht_listen_port
+
+    if req.enable_upnp is not None:
+        config.ENABLE_UPNP = bool(req.enable_upnp)
+
+    if req.proxy_enabled is not None:
+        config.PROXY_ENABLED = bool(req.proxy_enabled)
+
+    if req.proxy_url is not None:
+        config.PROXY_URL = req.proxy_url.strip()
+
+    if req.bt_trackers is not None:
+        config.BT_TRACKERS = req.bt_trackers.strip()
+
+    if req.bt_tracker_sources is not None:
+        config.BT_TRACKER_SOURCES = req.bt_tracker_sources
+
+    if req.bt_auto_update_trackers is not None:
+        config.BT_AUTO_UPDATE_TRACKERS = bool(req.bt_auto_update_trackers)
+
+    if req.user_agent is not None and req.user_agent.strip():
+        config.USER_AGENT = req.user_agent.strip()
+
+    if req.aria2_conf_path is not None:
+        config.ARIA2_CONF_PATH = req.aria2_conf_path.strip() or None
+
+    if req.session_path is not None:
+        config.SESSION_PATH = req.session_path.strip() or None
+
+    if req.log_path is not None:
+        config.LOG_PATH = req.log_path.strip() or None
+
+    if req.log_level is not None:
+        ll = req.log_level.strip().lower()
+        if ll in ["debug", "info", "warn", "error"]:
+            config.LOG_LEVEL = ll
+
     if req.aria2c_rpc_port is not None:
         if not (1024 <= req.aria2c_rpc_port <= 65535):
             raise HTTPException(status_code=400, detail="aria2c_rpc_port must be between 1024 and 65535")
@@ -324,7 +455,26 @@ async def update_settings(req: SettingsModel):
         config.COOKIE_BROWSER_ORDER = req.cookie_browser_order
 
     config.save_settings()
+    aria2c_manager.update_runtime_options()
     return {"message": "Settings updated successfully", "settings": get_settings_dict()}
+
+@app.post("/api/settings/trackers/update")
+async def update_trackers():
+    count = await asyncio.to_thread(config.update_trackers_from_remote)
+    return {"message": f"Updated trackers list ({count} trackers loaded)", "trackers_count": count, "settings": get_settings_dict()}
+
+@app.post("/api/settings/session/reset")
+async def reset_session():
+    success = await asyncio.to_thread(config.reset_session)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to reset download session file")
+    return {"message": "Download session file reset successfully"}
+
+@app.post("/api/settings/factory-reset")
+async def factory_reset():
+    await asyncio.to_thread(config.factory_reset)
+    aria2c_manager.update_runtime_options()
+    return {"message": "Factory reset complete. Centralized settings restored to default values.", "settings": get_settings_dict()}
 
 @app.get("/api/settings/cookies/status")
 async def get_cookie_status():

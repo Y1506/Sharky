@@ -67,6 +67,19 @@ class Aria2cManager:
             return False
         console.print(f"[blue]Starting aria2c RPC server on port {config.ARIA2C_RPC_PORT}...[/blue]")
         try:
+            download_limit_str = str(config.DOWNLOAD_SPEED_LIMIT) if config.DOWNLOAD_SPEED_LIMIT > 0 else "0"
+            upload_limit_str = str(config.UPLOAD_SPEED_LIMIT) if config.UPLOAD_SPEED_LIMIT > 0 else "0"
+            continue_str = "true" if config.ARIA2C_CONTINUE else "false"
+            bt_save_meta_str = "true" if config.BT_SAVE_MAGNET_AS_TORRENT else "false"
+            bt_follow_str = "true" if config.BT_AUTO_DOWNLOAD_CONTENT else "false"
+            bt_encrypt_str = "true" if config.BT_FORCE_ENCRYPTION else "false"
+            seed_ratio_str = "0.0" if config.BT_KEEP_SEEDING else str(config.BT_SEED_RATIO)
+            seed_time_str = "0" if config.BT_KEEP_SEEDING else str(config.BT_SEED_TIME)
+            upnp_str = "true" if config.ENABLE_UPNP else "false"
+            log_level_str = config.LOG_LEVEL.lower() if config.LOG_LEVEL else "warn"
+            if log_level_str not in ["debug", "info", "notice", "warn", "error"]:
+                log_level_str = "warn"
+
             cmd = [
                 aria2c_path,
                 '--enable-rpc',
@@ -76,22 +89,23 @@ class Aria2cManager:
                 f'--max-connection-per-server={config.ARIA2C_MAX_CONNECTIONS}',
                 f'--split={config.ARIA2C_SPLIT}',
                 f'--min-split-size={config.ARIA2C_MIN_SPLIT_SIZE}',
-                f'--max-concurrent-downloads={config.ARIA2C_MAX_CONCURRENT_DOWNLOADS}',
+                f'--max-concurrent-downloads={config.CONCURRENTDOWNLOADS}',
                 f'--piece-length={config.ARIA2C_PIECE_LENGTH}',
                 f'--disk-cache={config.ARIA2C_DISK_CACHE}',
                 f'--file-allocation={config.ARIA2C_FILE_ALLOCATION}',
-                '--continue=true',
+                f'--continue={continue_str}',
                 '--max-tries=20',
                 '--retry-wait=0',
                 '--timeout=30',
                 '--connect-timeout=10',
                 '--bt-request-peer-speed-limit=0',
-                '--max-overall-download-limit=0',
-                '--max-download-limit=0',
-                '--max-upload-limit=0',
+                f'--max-overall-download-limit={download_limit_str}',
+                f'--max-download-limit={download_limit_str}',
+                f'--max-overall-upload-limit={upload_limit_str}',
+                f'--max-upload-limit={upload_limit_str}',
                 '--lowest-speed-limit=0',
                 '--max-file-not-found=20',
-                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                f'--user-agent={config.USER_AGENT}',
                 '--enable-http-keep-alive=true',
                 '--enable-http-pipelining=true',
                 '--http-accept-gzip=true',
@@ -114,21 +128,44 @@ class Aria2cManager:
                 '--realtime-chunk-checksum=false',
                 '--check-certificate=false',
                 '--disable-ipv6=false',
-                '--enable-dht=false',
-                '--enable-peer-exchange=false',
+                '--enable-dht=true',
+                f'--dht-listen-port={config.DHT_LISTEN_PORT}',
+                f'--listen-port={config.BT_LISTEN_PORT}',
+                f'--enable-rpc-natpmp={upnp_str}',
+                '--enable-peer-exchange=true',
+                f'--bt-save-metadata={bt_save_meta_str}',
+                f'--follow-torrent={bt_follow_str}',
+                f'--bt-force-encryption={bt_encrypt_str}',
                 '--follow-metalink=false',
                 '--metalink-preferred-protocol=http',
-                '--bt-enable-lpd=false',
-                '--bt-max-peers=0',
+                '--bt-enable-lpd=true',
+                '--bt-max-peers=55',
                 '--bt-stop-timeout=0',
-                '--seed-time=0',
-                '--seed-ratio=0.0',
-                '--log-level=error',
+                f'--seed-time={seed_time_str}',
+                f'--seed-ratio={seed_ratio_str}',
+                f'--log-level={log_level_str}',
                 '--console-log-level=error',
                 '--summary-interval=0',
                 '--download-result=hide',
                 '--quiet=true',
             ]
+
+            if config.PROXY_ENABLED and config.PROXY_URL and config.PROXY_URL.strip():
+                cmd.append(f'--all-proxy={config.PROXY_URL.strip()}')
+
+            if config.BT_TRACKERS and config.BT_TRACKERS.strip():
+                trackers_list = [t.strip() for t in config.BT_TRACKERS.splitlines() if t.strip()]
+                if trackers_list:
+                    cmd.append(f'--bt-tracker={",".join(trackers_list)}')
+
+            if config.ARIA2_CONF_PATH and os.path.exists(config.ARIA2_CONF_PATH):
+                cmd.append(f'--conf-path={config.ARIA2_CONF_PATH}')
+
+            session_file = config.SESSION_PATH or str(config.BASEDIR / 'download.session')
+            if session_file:
+                cmd.append(f'--save-session={session_file}')
+                if os.path.exists(session_file):
+                    cmd.append(f'--input-file={session_file}')
             if sys.platform == 'win32':
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -202,6 +239,27 @@ class Aria2cManager:
                 self.process = None
                 self.server = None
                 self.is_running = False
+
+    def update_runtime_options(self):
+        if self.is_running and self.server:
+            try:
+                dl_limit = str(config.DOWNLOAD_SPEED_LIMIT) if config.DOWNLOAD_SPEED_LIMIT > 0 else "0"
+                ul_limit = str(config.UPLOAD_SPEED_LIMIT) if config.UPLOAD_SPEED_LIMIT > 0 else "0"
+                options = {
+                    "max-overall-download-limit": dl_limit,
+                    "max-download-limit": dl_limit,
+                    "max-overall-upload-limit": ul_limit,
+                    "max-upload-limit": ul_limit,
+                    "max-concurrent-downloads": str(config.CONCURRENTDOWNLOADS),
+                }
+                self.server.aria2.changeGlobalOption(f"token:{config.ARIA2C_SECRET}", options)
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Could not update aria2 runtime options: {e}")
+
+    def restart(self) -> bool:
+        self.stop()
+        return self.start()
 
 aria2c_manager = Aria2cManager()
 

@@ -42,6 +42,8 @@ class DownloadManager:
         network_monitor.start()
         self._start_aria2c()
         self._reset_orphaned_downloads()
+        if config.AUTO_RESUME_UNFINISHED:
+            self.start_downloads()
 
     def _reset_orphaned_downloads(self):
         try:

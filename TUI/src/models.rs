@@ -25,3 +25,17 @@ pub struct DownloadStats {
     pub is_running: bool,
     pub is_paused: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppSettings {
+    pub download_dir: Option<String>,
+    pub concurrent_downloads: Option<i64>,
+    pub download_speed_limit: Option<i64>,
+    pub upload_speed_limit: Option<i64>,
+    pub max_connections_per_server: Option<i64>,
+    pub continue_download: Option<bool>,
+    pub auto_resume_unfinished: Option<bool>,
+    pub proxy_enabled: Option<bool>,
+    pub proxy_url: Option<String>,
+    pub user_agent: Option<String>,
+}

@@ -8,8 +8,20 @@ import {
   stopDownloads, retryFailedDownloads, clearCompletedDownloads, removeDownload,
   addDownload, addBatchDownloads
 } from './api';
-import type { AddDownloadPayload } from './types';
+import type { AddDownloadPayload, WebLocalSettings } from './types';
 import SettingsModal from './components/SettingsModal';
+
+const DEFAULT_LOCAL_SETTINGS: WebLocalSettings = {
+  theme: 'dark',
+  hideAppMenu: false,
+  autoHideWindow: false,
+  showDownloadProgressBar: true,
+  language: 'en',
+  rememberWindowLayout: true,
+  autoSaveToDevice: true,
+  soundNotification: true,
+  desktopNotification: false,
+};
 
 export default function App() {
   const { downloads, stats, connected } = useSharkyWebSocket();
@@ -22,18 +34,30 @@ export default function App() {
   const [expectedHash, setExpectedHash] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Auto-save completed downloads to user's device/browser
-  const [autoSaveToDevice, setAutoSaveToDevice] = useState<boolean>(() => {
-    const saved = localStorage.getItem('sharky_auto_save_device');
-    return saved !== null ? saved === 'true' : true;
+  // Decentralized (Local) Web Settings (localStorage)
+  const [localSettings, setLocalSettings] = useState<WebLocalSettings>(() => {
+    try {
+      const saved = localStorage.getItem('sharky_web_local_settings');
+      if (saved) return JSON.parse(saved);
+      const legacyAutoSave = localStorage.getItem('sharky_auto_save_device');
+      if (legacyAutoSave !== null) {
+        return { ...DEFAULT_LOCAL_SETTINGS, autoSaveToDevice: legacyAutoSave === 'true' };
+      }
+    } catch {}
+    return DEFAULT_LOCAL_SETTINGS;
   });
+
+  const updateLocalSettings = (newSettings: WebLocalSettings) => {
+    setLocalSettings(newSettings);
+    localStorage.setItem('sharky_web_local_settings', JSON.stringify(newSettings));
+    localStorage.setItem('sharky_auto_save_device', String(newSettings.autoSaveToDevice));
+  };
 
   const autoDownloadedIds = useRef<Set<number>>(new Set());
   const initialLoadDone = useRef(false);
 
   const toggleAutoSave = (val: boolean) => {
-    setAutoSaveToDevice(val);
-    localStorage.setItem('sharky_auto_save_device', String(val));
+    updateLocalSettings({ ...localSettings, autoSaveToDevice: val });
   };
 
   useEffect(() => {
@@ -50,7 +74,7 @@ export default function App() {
       return;
     }
 
-    if (!autoSaveToDevice) return;
+    if (!localSettings.autoSaveToDevice) return;
 
     // For any download that completes during active session, auto-trigger browser download to device
     downloads.forEach(d => {
@@ -64,7 +88,7 @@ export default function App() {
         document.body.removeChild(link);
       }
     });
-  }, [downloads, autoSaveToDevice]);
+  }, [downloads, localSettings.autoSaveToDevice]);
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,15 +171,15 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => toggleAutoSave(!autoSaveToDevice)}
+            onClick={() => toggleAutoSave(!localSettings.autoSaveToDevice)}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
               padding: '8px 14px',
-              backgroundColor: autoSaveToDevice ? 'rgba(16, 185, 129, 0.15)' : '#1e293b',
-              color: autoSaveToDevice ? '#34d399' : '#94a3b8',
-              border: `1px solid ${autoSaveToDevice ? '#10b981' : '#334155'}`,
+              backgroundColor: localSettings.autoSaveToDevice ? 'rgba(16, 185, 129, 0.15)' : '#1e293b',
+              color: localSettings.autoSaveToDevice ? '#34d399' : '#94a3b8',
+              border: `1px solid ${localSettings.autoSaveToDevice ? '#10b981' : '#334155'}`,
               borderRadius: '6px',
               cursor: 'pointer',
               fontWeight: 600,
@@ -164,7 +188,7 @@ export default function App() {
             title="When ON, completed files automatically download to your device / browser"
           >
             <Save style={{ width: '15px', height: '15px' }} />
-            <span>Auto-Save: {autoSaveToDevice ? 'ON' : 'OFF'}</span>
+            <span>Auto-Save: {localSettings.autoSaveToDevice ? 'ON' : 'OFF'}</span>
           </button>
 
           <button onClick={() => startDownloads()} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
@@ -384,8 +408,8 @@ export default function App() {
       <SettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
-        autoSaveToDevice={autoSaveToDevice}
-        onToggleAutoSave={toggleAutoSave}
+        localSettings={localSettings}
+        onUpdateLocalSettings={updateLocalSettings}
       />
     </div>
   );

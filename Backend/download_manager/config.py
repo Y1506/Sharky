@@ -56,6 +56,45 @@ class Config:
     COOKIE_BROWSER_PATH: Optional[str] = None  # Manual browser profile path
     qualityoptions: Optional[List[Tuple[str, str]]] = None
 
+    # Transmission / Speed Limits
+    UPLOAD_SPEED_LIMIT: int = 0  # In bytes/second, 0 = unlimited
+
+    # Startup & General
+    AUTO_RESUME_UNFINISHED: bool = False
+
+    # BitTorrent Configuration
+    BT_SAVE_MAGNET_AS_TORRENT: bool = True
+    BT_AUTO_DOWNLOAD_CONTENT: bool = True
+    BT_FORCE_ENCRYPTION: bool = False
+    BT_KEEP_SEEDING: bool = False
+    BT_SEED_RATIO: float = 1.0
+    BT_SEED_TIME: int = 60  # minutes
+    BT_LISTEN_PORT: int = 21301
+    DHT_LISTEN_PORT: int = 26701
+    ENABLE_UPNP: bool = True
+
+    # Network & Proxy
+    PROXY_ENABLED: bool = False
+    PROXY_URL: str = ""
+
+    # Trackers
+    BT_TRACKERS: str = ""
+    BT_TRACKER_SOURCES: List[str] = field(default_factory=lambda: [
+        "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best_ip.txt",
+        "https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/best.txt"
+    ])
+    BT_AUTO_UPDATE_TRACKERS: bool = True
+    BT_TRACKERS_LAST_UPDATED: str = ""
+
+    # User-Agent
+    USER_AGENT: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    # Developer & Engine Paths
+    ARIA2_CONF_PATH: Optional[str] = None
+    SESSION_PATH: Optional[str] = None
+    LOG_PATH: Optional[str] = None
+    LOG_LEVEL: str = "warn"
+
     def __post_init__(self):
         self.VIDEODIR = self.BASEDIR / 'videos'
         self.AUDIODIR = self.BASEDIR / 'audio'
@@ -65,6 +104,10 @@ class Config:
         self.LOGFILE = self.BASEDIR / 'download_manager.log'
         self.SETTINGSFILE = self.BASEDIR / 'settings.json'
         self.STATE_FILE = self.BASEDIR / 'download_state.json'
+        if not self.SESSION_PATH:
+            self.SESSION_PATH = str(self.BASEDIR / 'download.session')
+        if not self.LOG_PATH:
+            self.LOG_PATH = str(self.LOGFILE)
 
         for directory in [self.BASEDIR, self.VIDEODIR, self.AUDIODIR, self.FILESDIR, self.TORRENTSDIR]:
             try:
@@ -98,23 +141,26 @@ class Config:
 
     def load_settings(self):
         try:
-            # Check for settings.json in BASEDIR or cwd
             settings_path = self.SETTINGSFILE if self.SETTINGSFILE.exists() else Path('settings.json')
             if settings_path.exists():
                 with open(settings_path, 'r', encoding='utf-8') as f:
                     settings = json.load(f)
 
+                alias_map = {
+                    'concurrent_downloads': 'CONCURRENTDOWNLOADS',
+                    'concurrentdownloads': 'CONCURRENTDOWNLOADS',
+                    'max_connections_per_server': 'ARIA2C_MAX_CONNECTIONS',
+                    'continue_download': 'ARIA2C_CONTINUE',
+                }
+
                 for key, value in settings.items():
-                    key_upper = key.upper()
-                    if hasattr(self, key_upper):
-                        if key == 'basedir':
-                            # When DOWNLOAD_DIR environment variable is set (e.g. in Docker),
-                            # keep the container's mounted directory and do not overwrite it with host path.
-                            if not os.environ.get('DOWNLOAD_DIR'):
-                                self.BASEDIR = Path(value).resolve()
-                                self.__post_init__()
-                        else:
-                            setattr(self, key_upper, value)
+                    target_attr = alias_map.get(key, key.upper())
+                    if key == 'basedir' or key == 'download_dir':
+                        if not os.environ.get('DOWNLOAD_DIR'):
+                            self.BASEDIR = Path(value).resolve()
+                            self.__post_init__()
+                    elif hasattr(self, target_attr):
+                        setattr(self, target_attr, value)
         except Exception as e:
             console.print(f'[yellow]Warning: Failed to load settings: {e}[/yellow]')
 
@@ -127,13 +173,40 @@ class Config:
                         old_s = json.load(f)
                         if 'basedir' in old_s:
                             saved_basedir = old_s['basedir']
+                        elif 'download_dir' in old_s:
+                            saved_basedir = old_s['download_dir']
                 except Exception:
                     pass
 
             settings = {
                 'basedir': saved_basedir,
-                'concurrentdownloads': self.CONCURRENTDOWNLOADS,
+                'download_dir': saved_basedir,
+                'concurrent_downloads': self.CONCURRENTDOWNLOADS,
                 'download_speed_limit': self.DOWNLOAD_SPEED_LIMIT,
+                'upload_speed_limit': self.UPLOAD_SPEED_LIMIT,
+                'max_connections_per_server': self.ARIA2C_MAX_CONNECTIONS,
+                'continue_download': self.ARIA2C_CONTINUE,
+                'auto_resume_unfinished': self.AUTO_RESUME_UNFINISHED,
+                'bt_save_magnet_as_torrent': self.BT_SAVE_MAGNET_AS_TORRENT,
+                'bt_auto_download_content': self.BT_AUTO_DOWNLOAD_CONTENT,
+                'bt_force_encryption': self.BT_FORCE_ENCRYPTION,
+                'bt_keep_seeding': self.BT_KEEP_SEEDING,
+                'bt_seed_ratio': self.BT_SEED_RATIO,
+                'bt_seed_time': self.BT_SEED_TIME,
+                'bt_listen_port': self.BT_LISTEN_PORT,
+                'dht_listen_port': self.DHT_LISTEN_PORT,
+                'enable_upnp': self.ENABLE_UPNP,
+                'proxy_enabled': self.PROXY_ENABLED,
+                'proxy_url': self.PROXY_URL,
+                'bt_trackers': self.BT_TRACKERS,
+                'bt_tracker_sources': self.BT_TRACKER_SOURCES,
+                'bt_auto_update_trackers': self.BT_AUTO_UPDATE_TRACKERS,
+                'bt_trackers_last_updated': self.BT_TRACKERS_LAST_UPDATED,
+                'user_agent': self.USER_AGENT,
+                'aria2_conf_path': self.ARIA2_CONF_PATH,
+                'session_path': self.SESSION_PATH,
+                'log_path': self.LOG_PATH,
+                'log_level': self.LOG_LEVEL,
                 'aria2c_rpc_port': self.ARIA2C_RPC_PORT,
                 'aria2c_secret': self.ARIA2C_SECRET,
                 'qbittorrent_host': self.QBITTORRENT_HOST,
@@ -150,6 +223,76 @@ class Config:
                 json.dump(settings, f, indent=2)
         except Exception as e:
             console.print(f'[yellow]Warning: Failed to save settings: {e}[/yellow]')
+
+    def update_trackers_from_remote(self) -> int:
+        """Fetch trackers from configured remote tracker sources and merge with BT_TRACKERS."""
+        import requests
+        import datetime
+        trackers_set = set()
+        if self.BT_TRACKERS:
+            for t in self.BT_TRACKERS.splitlines():
+                t = t.strip()
+                if t:
+                    trackers_set.add(t)
+
+        for url in self.BT_TRACKER_SOURCES:
+            try:
+                resp = requests.get(url, timeout=10)
+                if resp.status_code == 200:
+                    for line in resp.text.splitlines():
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            trackers_set.add(line)
+            except Exception as e:
+                console.print(f"[yellow]Failed to fetch trackers from {url}: {e}[/yellow]")
+
+        self.BT_TRACKERS = "\n".join(sorted(trackers_set))
+        self.BT_TRACKERS_LAST_UPDATED = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.save_settings()
+        return len(trackers_set)
+
+    def reset_session(self) -> bool:
+        """Reset / truncate aria2 download session file."""
+        try:
+            p = Path(self.SESSION_PATH or (self.BASEDIR / 'download.session'))
+            if p.exists():
+                p.unlink()
+            p.touch()
+            return True
+        except Exception as e:
+            console.print(f"[yellow]Failed to reset session: {e}[/yellow]")
+            return False
+
+    def factory_reset(self):
+        """Restore default centralized configuration values."""
+        self.CONCURRENTDOWNLOADS = 5
+        self.DOWNLOAD_SPEED_LIMIT = 0
+        self.UPLOAD_SPEED_LIMIT = 0
+        self.ARIA2C_MAX_CONNECTIONS = 16
+        self.ARIA2C_CONTINUE = True
+        self.AUTO_RESUME_UNFINISHED = False
+        self.BT_SAVE_MAGNET_AS_TORRENT = True
+        self.BT_AUTO_DOWNLOAD_CONTENT = True
+        self.BT_FORCE_ENCRYPTION = False
+        self.BT_KEEP_SEEDING = False
+        self.BT_SEED_RATIO = 1.0
+        self.BT_SEED_TIME = 60
+        self.BT_LISTEN_PORT = 21301
+        self.DHT_LISTEN_PORT = 26701
+        self.ENABLE_UPNP = True
+        self.PROXY_ENABLED = False
+        self.PROXY_URL = ""
+        self.BT_TRACKERS = ""
+        self.BT_AUTO_UPDATE_TRACKERS = True
+        self.BT_TRACKERS_LAST_UPDATED = ""
+        self.USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        self.ARIA2_CONF_PATH = None
+        self.SESSION_PATH = str(self.BASEDIR / 'download.session')
+        self.LOG_PATH = str(self.BASEDIR / 'download_manager.log')
+        self.LOG_LEVEL = "warn"
+        self.ARIA2C_RPC_PORT = 6800
+        self.ARIA2C_SECRET = "aria2secret"
+        self.save_settings()
 
     def save_state(self, state_data: dict):
         """Save application state safely using atomic JSON write."""

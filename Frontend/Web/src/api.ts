@@ -97,6 +97,24 @@ export async function clearCookies(): Promise<void> {
   if (!res.ok) throw new Error('Failed to clear cookies');
 }
 
+export async function updateTrackers(): Promise<{ message: string; trackers_count: number; settings: AppSettings }> {
+  const res = await fetch(`${API_BASE}/settings/trackers/update`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to update trackers list');
+  return res.json();
+}
+
+export async function resetSession(): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/settings/session/reset`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to reset download session');
+  return res.json();
+}
+
+export async function factoryReset(): Promise<{ message: string; settings: AppSettings }> {
+  const res = await fetch(`${API_BASE}/settings/factory-reset`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to factory reset settings');
+  return res.json();
+}
+
 export function useSharkyWebSocket() {
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [stats, setStats] = useState<DownloadStats | null>(null);

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use reqwest::Client;
 
-use crate::models::{DownloadItem, DownloadStats};
+use crate::models::{DownloadItem, DownloadStats, AppSettings};
 
 pub struct ApiClient {
     client: Client,
@@ -29,6 +29,18 @@ impl ApiClient {
         let url = format!("{}/api/stats", self.base_url);
         let stats = self.client.get(&url).send().await?.json().await?;
         Ok(stats)
+    }
+
+    pub async fn fetch_settings(&self) -> Result<AppSettings> {
+        let url = format!("{}/api/settings", self.base_url);
+        let settings = self.client.get(&url).send().await?.json().await?;
+        Ok(settings)
+    }
+
+    pub async fn update_settings(&self, settings: &AppSettings) -> Result<()> {
+        let url = format!("{}/api/settings", self.base_url);
+        self.client.put(&url).json(settings).send().await?;
+        Ok(())
     }
 
     pub async fn start_downloads(&self) -> Result<()> {
