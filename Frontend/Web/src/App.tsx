@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Download, Play, Pause, Square, RotateCcw, Trash2, Plus, Wifi, WifiOff,
-  Film, File, HardDrive, CheckCircle2, AlertCircle, Clock, Settings
+  Film, File, HardDrive, CheckCircle2, AlertCircle, Clock, Settings, Save
 } from 'lucide-react';
 import {
   useSharkyWebSocket, startDownloads, pauseDownloads, resumeDownloads,
@@ -21,6 +21,50 @@ export default function App() {
   const [quality, setQuality] = useState('best');
   const [expectedHash, setExpectedHash] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Auto-save completed downloads to user's device/browser
+  const [autoSaveToDevice, setAutoSaveToDevice] = useState<boolean>(() => {
+    const saved = localStorage.getItem('sharky_auto_save_device');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const autoDownloadedIds = useRef<Set<number>>(new Set());
+  const initialLoadDone = useRef(false);
+
+  const toggleAutoSave = (val: boolean) => {
+    setAutoSaveToDevice(val);
+    localStorage.setItem('sharky_auto_save_device', String(val));
+  };
+
+  useEffect(() => {
+    if (!downloads || downloads.length === 0) return;
+
+    // On initial load, record any downloads that are already completed so we do not re-trigger them
+    if (!initialLoadDone.current) {
+      initialLoadDone.current = true;
+      downloads.forEach(d => {
+        if (d.status === 'completed') {
+          autoDownloadedIds.current.add(d.id);
+        }
+      });
+      return;
+    }
+
+    if (!autoSaveToDevice) return;
+
+    // For any download that completes during active session, auto-trigger browser download to device
+    downloads.forEach(d => {
+      if (d.status === 'completed' && !autoDownloadedIds.current.has(d.id)) {
+        autoDownloadedIds.current.add(d.id);
+        const link = document.createElement('a');
+        link.href = `/api/downloads/${d.id}/file`;
+        link.download = '';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    });
+  }, [downloads, autoSaveToDevice]);
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,6 +144,27 @@ export default function App() {
 
           <button onClick={() => setShowSettingsModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#1e293b', color: '#38bdf8', border: '1px solid #0284c7', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }} title="Open System Settings">
             <Settings style={{ width: '15px', height: '15px' }} /> Settings
+          </button>
+
+          <button
+            onClick={() => toggleAutoSave(!autoSaveToDevice)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              backgroundColor: autoSaveToDevice ? 'rgba(16, 185, 129, 0.15)' : '#1e293b',
+              color: autoSaveToDevice ? '#34d399' : '#94a3b8',
+              border: `1px solid ${autoSaveToDevice ? '#10b981' : '#334155'}`,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '13px'
+            }}
+            title="When ON, completed files automatically download to your device / browser"
+          >
+            <Save style={{ width: '15px', height: '15px' }} />
+            <span>Auto-Save: {autoSaveToDevice ? 'ON' : 'OFF'}</span>
           </button>
 
           <button onClick={() => startDownloads()} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
@@ -319,6 +384,8 @@ export default function App() {
       <SettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
+        autoSaveToDevice={autoSaveToDevice}
+        onToggleAutoSave={toggleAutoSave}
       />
     </div>
   );

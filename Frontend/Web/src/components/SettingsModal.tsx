@@ -9,9 +9,11 @@ import type { AppSettings, CookieStatus } from '../types';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  autoSaveToDevice: boolean;
+  onToggleAutoSave: (val: boolean) => void;
 }
 
-export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export default function SettingsModal({ isOpen, onClose, autoSaveToDevice, onToggleAutoSave }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'engine' | 'cookies'>('general');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -259,8 +261,27 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                         }}
                       />
                       <span style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                        Base folder where all subdirectories (videos, audio, files, torrents) are stored.
+                        Base folder where all subdirectories (videos, audio, files, torrents) are stored on the server.
                       </span>
+                    </div>
+
+                    <div style={{ backgroundColor: '#1e293b', padding: '14px', borderRadius: '8px', border: '1px solid #334155' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ paddingRight: '16px' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>
+                            Auto-Save to Device / Browser
+                          </label>
+                          <span style={{ fontSize: '12px', color: '#94a3b8', marginTop: '3px', display: 'block' }}>
+                            Automatically trigger browser file download to your device's Downloads directory as soon as the download finishes.
+                          </span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={autoSaveToDevice}
+                          onChange={(e) => onToggleAutoSave(e.target.checked)}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#38bdf8' }}
+                        />
+                      </div>
                     </div>
 
                     <div>
