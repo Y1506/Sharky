@@ -1,0 +1,33 @@
+# Maintainer: Y1506 <https://github.com/Y1506>
+pkgname=sharky-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="High-performance download manager with GUI and TUI"
+arch=('x86_64')
+url="https://github.com/Y1506/Sharky"
+license=('MIT')
+depends=(
+    'gtk3'
+    'webkit2gtk-4.1'
+    'libsoup3'
+    'aria2'
+    'ffmpeg'
+)
+optdepends=(
+    'python: for running backend independently'
+)
+source=("${url}/releases/download/v${pkgver}/sharky_${pkgver}_amd64.deb")
+sha256sums=('SKIP')
+
+package() {
+    # Extract the .deb archive
+    cd "${srcdir}"
+    ar x "sharky_${pkgver}_amd64.deb"
+    tar -xf data.tar.gz -C "${pkgdir}" 2>/dev/null || \
+    tar -xf data.tar.xz -C "${pkgdir}" 2>/dev/null || \
+    tar -xf data.tar.zst -C "${pkgdir}" 2>/dev/null
+
+    # Install license
+    install -Dm644 "${pkgdir}/usr/share/doc/sharky/copyright" \
+        "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE" 2>/dev/null || true
+}

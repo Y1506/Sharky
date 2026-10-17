@@ -44,3 +44,26 @@ node_modules/
 *.tsbuildinfo
 package-lock.json
 
+# Tauri
+Frontend/Web/src-tauri/target/
+Frontend/Web/src-tauri/gen/
+Frontend/Web/src-tauri/binaries/
+
+# Rust
+TUI/target/
+
+# PyInstaller
+Backend/build/
+Backend/dist/
+*.spec.bak
+
+# Expo / EAS
+Frontend/Mobile/.expo/
+Frontend/Mobile/android/
+Frontend/Mobile/ios/
+
+# Agents & local tooling
+.agent/
+.agents/
+
+
