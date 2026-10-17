@@ -17,6 +17,7 @@ on:
       - develop
       - "Refact/**"
       - "feature/**"
+      - "fix/**"
   pull_request:
     branches:
       - main
